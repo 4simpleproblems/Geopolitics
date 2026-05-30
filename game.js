@@ -91,6 +91,7 @@ window.togglePenTool = () => {
         drawnPoints = []; 
         world.pathsData([]); 
         world.pointsData([]);
+        world.polygonsData(mapData);
     }
     logMsg(isDrawing ? "Pen Active: Click vertices (Shift to Snap)" : "Pen Suspended");
 };
@@ -104,17 +105,29 @@ window.autoCoastFix = () => {
     // Update visuals
     world.pathsData([{ coords: drawnPoints.map(p => [p[1], p[0]]) }]);
     world.pointsData(drawnPoints.map(p => ({ lat: p[1], lng: p[0] })));
+    
+    // Update Preview
+    if (drawnPoints.length > 2) {
+        const preview = {
+            type: 'Feature',
+            properties: { isPreview: true },
+            geometry: { type: 'Polygon', coordinates: [[...drawnPoints, drawnPoints[0]]] }
+        };
+        const rewound = turf.rewind(preview, { reverse: true });
+        world.polygonsData([...mapData, rewound]);
+    }
     logMsg("Auto-Coast Optimization Complete");
 };
 window.finalizeCustom = () => {
     if (drawnPoints.length < 3) return logMsg("Min 3 nodes required");
     const name = prompt("Empire Designation:");
     if (!name) return;
-    const feat = {
+    let feat = {
         type: 'Feature',
         properties: { ADMIN: name, owner: name, MAPCOLOR7: Math.floor(Math.random()*7)+1, gameStats: { pop: 10000000, mil: 100000 } },
         geometry: { type: 'Polygon', coordinates: [[...drawnPoints, drawnPoints[0]]] }
     };
+    feat = turf.rewind(feat, { reverse: true }); // FIX: Ensure inside fill
     mapData.push(feat);
     setupNeighborhoods();
     world.polygonsData(mapData);
@@ -125,6 +138,7 @@ window.clearPen = () => {
     drawnPoints = []; 
     world.pathsData([]); 
     world.pointsData([]);
+    world.polygonsData(mapData);
 };
 window.useNormalBorders = (adminName) => {
     const original = originalMapData.find(f => f.properties.ADMIN === adminName);
@@ -202,6 +216,7 @@ function setupWorld() {
         .atmosphereAltitude(0.12)
         .polygonsData(mapData)
         .polygonCapColor(d => {
+            if (d.properties.isPreview) return 'rgba(255, 255, 0, 0.4)';
             if (activeMode === 'builder' && d.properties.owner === player.empireName) return PLAYER_COLOR + 'aa';
             const ownerColor = getOwnerColor(d.properties.owner);
             const progs = invasionProgress[d.properties.ADMIN];
@@ -263,6 +278,17 @@ function setupWorld() {
         world.pointColor(() => '#ffffff')
              .pointRadius(0.2)
              .pointsData(drawnPoints.map(p => ({ lat: p[1], lng: p[0] })));
+
+        // NEW: Filled Preview
+        if (drawnPoints.length > 2) {
+            const preview = {
+                type: 'Feature',
+                properties: { isPreview: true },
+                geometry: { type: 'Polygon', coordinates: [[...drawnPoints, drawnPoints[0]]] }
+            };
+            const rewound = turf.rewind(preview, { reverse: true });
+            world.polygonsData([...mapData, rewound]);
+        }
 
         hasUnsavedChanges = true;
     });
