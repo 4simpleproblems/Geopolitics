@@ -102,7 +102,8 @@ function setupNeighborhoods() {
             if (c1 === c2) return;
             const cent2 = getCentroid(c2);
             const dist = Math.sqrt(Math.pow(cent1[0] - cent2[0], 2) + Math.pow(cent1[1] - cent2[1], 2));
-            if (dist < 12) { // Tighter neighborhood check
+            // Increased threshold to 25 to be more permissive for islands/large nations
+            if (dist < 25) { 
                 c1.properties.neighbors.push(c2.properties.ADMIN);
             }
         });
@@ -399,16 +400,24 @@ function executeInvasion(attackerName, targetFeature) {
     let attMil = attackerLands.reduce((sum, f) => sum + f.properties.gameStats.mil, 0);
     let defMil = targetFeature.properties.gameStats.mil;
 
-    // Realistic Power Scale Check
-    // If target is 5x bigger, invasion is nearly impossible
     if (defMil > attMil * 2.5) {
         if (attackerName === player.empireName) logMsg(`Insufficient Force for ${targetName}`);
         return;
     }
 
+    // Add invasion arc (representing troop planes)
+    const tCentroid = getCentroid(targetFeature);
+    const sCentroid = getCentroid(attackerLands[0]); // Source from first land for simplicity
+    activeArcs.push({
+        startLat: sCentroid[1], startLng: sCentroid[0],
+        endLat: tCentroid[1], endLng: tCentroid[0],
+        color: [getOwnerColor(attackerName), '#ffffff']
+    });
+    world.arcsData(activeArcs);
+
     invasionProgress[targetName] = { active: true, val: 0, attacker: attackerName };
     
-    const duration = 2000 + (defMil / 50000) * 1000; // Duration based on military size
+    const duration = 2000 + (defMil / 50000) * 1000;
     const start = Date.now();
 
     const anim = () => {
@@ -421,7 +430,10 @@ function executeInvasion(attackerName, targetFeature) {
         if (prog < 1) {
             requestAnimationFrame(anim);
         } else {
-            // Resolution
+            // Remove arc
+            activeArcs = activeArcs.filter(a => a.endLat !== tCentroid[1] || a.endLng !== tCentroid[0]);
+            world.arcsData(activeArcs);
+
             invasionProgress[targetName].active = false;
             if (attMil > defMil * 1.05) {
                 targetFeature.properties.owner = attackerName;
@@ -441,8 +453,9 @@ function executeInvasion(attackerName, targetFeature) {
 
 function launchStrike(attackerName, targetFeature) {
     const centroid = getCentroid(targetFeature);
-    const startNode = mapData.find(f => f.properties.owner === attackerName);
-    const startCentroid = getCentroid(startNode);
+    const attackerLands = mapData.filter(f => f.properties.owner === attackerName);
+    if (attackerLands.length === 0) return;
+    const startCentroid = getCentroid(attackerLands[0]);
 
     activeArcs.push({
         startLat: startCentroid[1], startLng: startCentroid[0],
@@ -452,8 +465,22 @@ function launchStrike(attackerName, targetFeature) {
     world.arcsData(activeArcs);
 
     setTimeout(() => {
-        activeArcs = []; world.arcsData([]);
-        activeRings.push({ lat: centroid[1], lng: centroid[0], maxR: 15, speed: 5, repeat: 0, color: '#ee0000' });
+        activeArcs = activeArcs.filter(a => a.endLat !== centroid[1] || a.endLng !== centroid[0]);
+        world.arcsData(activeArcs);
+        
+        // BOMB EFFECT: Library (canvas-confetti) + Screen Shake
+        const endPoint = world.getCoords(centroid[1], centroid[0]);
+        confetti({
+            particleCount: 150,
+            spread: 70,
+            origin: { y: 0.6 },
+            colors: ['#ff4d4d', '#ffca28', '#333333'],
+            scalar: 1.2,
+            gravity: 2
+        });
+
+        document.body.classList.add('shake');
+        activeRings.push({ lat: centroid[1], lng: centroid[0], maxR: 25, speed: 6, repeat: 0, color: '#ee0000' });
         world.ringsData(activeRings);
         
         targetFeature.properties.gameStats.pop = Math.floor(targetFeature.properties.gameStats.pop * 0.1);
@@ -461,7 +488,10 @@ function launchStrike(attackerName, targetFeature) {
         logMsg(`GRID DOWN: ${targetFeature.properties.ADMIN}`);
         updateUI();
         
-        setTimeout(() => { activeRings = []; world.ringsData([]); }, 2000);
+        setTimeout(() => { 
+            activeRings = []; world.ringsData([]); 
+            document.body.classList.remove('shake');
+        }, 1000);
     }, 1000);
 }
 
