@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GEOPOLITICS // GLOBAL CONTROL</title>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <script src="https://unpkg.com/globe.gl"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="scanlines">
+
+    <div id="globe-container"></div>
+
+    <div class="overlay">
+        <div id="status-bar" style="display: none;">
+            <div class="status-item">Empire <span class="status-val" id="val-empire">N/A</span></div>
+            <div class="status-item">Sectors <span class="status-val" id="val-terr">0</span></div>
+            <div class="status-item">Personnel <span class="status-val" id="val-pop">0</span></div>
+            <div class="status-item">Military <span class="status-val" id="val-mil">0</span></div>
+            <div class="status-item">Economy <span class="status-val" id="val-econ">$0</span></div>
+        </div>
+
+        <div id="combat-log">System Standby</div>
+
+        <div id="controls" style="display: none;">
+            <button id="btn-draw" class="btn"><i class="fa-solid fa-pen-nib"></i> Build Mode</button>
+            <button id="btn-merge" class="btn"><i class="fa-solid fa-object-group"></i> Merge Sectors</button>
+            <button id="btn-save" class="btn"><i class="fa-solid fa-floppy-disk"></i> Backup State</button>
+        </div>
+    </div>
+
+    <div id="ctx-menu">
+        <div class="ctx-item" onclick="handleAction('invade')">Initiate Takeover</div>
+        <div class="ctx-item" onclick="handleAction('ally')">Establish Link</div>
+        <div class="ctx-item" onclick="handleAction('nuke')" style="color:var(--danger)">Nuclear Strike</div>
+    </div>
+
+    <div id="setup-screen">
+        <div class="setup-card">
+            <div class="setup-header">
+                <h1>GEOPOLITICS</h1>
+                <p>Initialize global command interface.</p>
+            </div>
+
+            <div class="input-group">
+                <label>Origin Point</label>
+                <input type="text" id="start-country" placeholder="Country name or code" autocomplete="off">
+            </div>
+
+            <button class="btn" onclick="initializeGame()" style="width: 100%; margin-top: 1rem; padding: 1rem;">Execute Deployment</button>
+        </div>
+    </div>
+
+    <script type="module" src="game.js"></script>
+</body>
+</html>
+<!-- Made with ❤️ from 4SP -->
