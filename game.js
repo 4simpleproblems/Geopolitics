@@ -281,13 +281,19 @@ function setupWorld() {
 
         // NEW: Filled Preview
         if (drawnPoints.length > 2) {
-            const preview = {
-                type: 'Feature',
-                properties: { isPreview: true },
-                geometry: { type: 'Polygon', coordinates: [[...drawnPoints, drawnPoints[0]]] }
-            };
-            const rewound = turf.rewind(preview, { reverse: true });
-            world.polygonsData([...mapData, rewound]);
+            try {
+                const preview = {
+                    type: 'Feature',
+                    properties: { isPreview: true },
+                    geometry: { type: 'Polygon', coordinates: [[...drawnPoints, drawnPoints[0]]] }
+                };
+                const rewound = turf.rewind(preview, { reverse: true });
+                if (rewound && rewound.geometry) {
+                    world.polygonsData([...mapData, rewound]);
+                }
+            } catch (e) {
+                console.warn("Preview geometry invalid", e);
+            }
         }
 
         hasUnsavedChanges = true;
@@ -436,12 +442,14 @@ function logMsg(msg) {
 function createTooltip(d) {
     if (!player.active) return '';
     const p = d.properties;
-    const stats = p.gameStats;
+    if (p.isPreview) return '<div class="tactical-tooltip">PREVIEW SECTOR</div>';
+    
+    const stats = p.gameStats || { pop: 0, mil: 0 };
     const ownerColor = getOwnerColor(p.owner);
     return `
         <div class="tactical-tooltip">
             <div style="font-weight:700; border-bottom:1px solid #333; padding-bottom:6px; margin-bottom:6px; display:flex; justify-content:space-between;">
-                ${p.ADMIN} <span style="color:${ownerColor}; font-size:0.6rem; font-weight:800;">${p.owner}</span>
+                ${p.ADMIN || 'Unknown'} <span style="color:${ownerColor}; font-size:0.6rem; font-weight:800;">${p.owner || 'Neutral'}</span>
             </div>
             <div style="display:flex; justify-content:space-between; font-size:0.65rem; color:#888;">
                 <span>Personnel</span> <span style="color:#fff;">${formatNum(stats.pop)}</span>
