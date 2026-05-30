@@ -4,6 +4,10 @@
 
 import { formatNum, getFuzzy, getCentroid, snapToCoast } from './utils.js';
 
+// Global Reference Hardening
+const Globe = window.Globe || window.GlobeGl;
+const THREE = window.THREE;
+
 let world;
 let mapData = [];
 let originalMapData = [];
@@ -25,7 +29,7 @@ let resolution = localStorage.getItem('geo_res') || 'high';
 let currentGameId = null;
 
 // IndexedDB Setup
-const DB_NAME = 'GeoDB_v3'; // Incremented for schema changes
+const DB_NAME = 'GeoDB_v4'; 
 const STORE_NAME = 'games';
 const dbPromise = new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, 1);
@@ -73,13 +77,13 @@ window.hideSettings = () => { document.getElementById('settings-overlay').style.
 window.setResolution = (res) => {
     resolution = res;
     localStorage.setItem('geo_res', res);
-    document.getElementById('res-high').classList.toggle('active', res === 'high');
-    document.getElementById('res-low').classList.toggle('active', res === 'low');
-    if (res === 'low') {
+    const h = document.getElementById('res-high');
+    const l = document.getElementById('res-low');
+    if (h) h.classList.toggle('active', res === 'high');
+    if (l) l.classList.toggle('active', res === 'low');
+    if (res === 'low' && world) {
         activeArcs = []; explosionData = [];
         world.arcsData([]); world.customLayerData([]);
-    } else {
-        world.arcsData(activeArcs); world.customLayerData(explosionData);
     }
 };
 
@@ -87,37 +91,37 @@ window.setResolution = (res) => {
 window.togglePenTool = () => {
     isDrawing = !isDrawing;
     document.getElementById('pen-controls').style.display = isDrawing ? 'flex' : 'none';
-    if (!isDrawing) { 
-        drawnPoints = []; 
-        world.pathsData([]); 
-        world.pointsData([]);
-        world.polygonsData(mapData);
-    }
+    if (!isDrawing) { drawnPoints = []; world.pathsData([]); world.pointsData([]); world.polygonsData(mapData); }
     logMsg(isDrawing ? "Pen Active: Click vertices (Shift to Snap)" : "Pen Suspended");
 };
+
 window.autoCoastFix = () => {
     if (drawnPoints.length < 2) return;
     const coastlines = { type: 'FeatureCollection', features: originalMapData };
-    drawnPoints = drawnPoints.map(p => {
-        const point = { type: 'Point', coordinates: p };
-        return snapToCoast(point, coastlines, 2.0); 
-    });
-    // Update visuals
+    
+    // Improved Fix: Injects intermediate coast points between current vertices
+    let optimized = [];
+    for (let i = 0; i < drawnPoints.length; i++) {
+        const p1 = drawnPoints[i];
+        const p2 = drawnPoints[(i + 1) % drawnPoints.length];
+        
+        optimized.push(p1);
+        
+        // Find if segment is near coast
+        const midpoint = [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2];
+        const snappedMid = snapToCoast({ type: 'Point', coordinates: midpoint }, coastlines, 5.0);
+        
+        if (Math.abs(snappedMid[0] - midpoint[0]) > 0.001) {
+            optimized.push(snappedMid);
+        }
+    }
+    
+    drawnPoints = optimized;
     world.pathsData([{ coords: drawnPoints.map(p => [p[1], p[0]]) }]);
     world.pointsData(drawnPoints.map(p => ({ lat: p[1], lng: p[0] })));
-    
-    // Update Preview
-    if (drawnPoints.length > 2) {
-        const preview = {
-            type: 'Feature',
-            properties: { isPreview: true },
-            geometry: { type: 'Polygon', coordinates: [[...drawnPoints, drawnPoints[0]]] }
-        };
-        const rewound = turf.rewind(preview, { reverse: true });
-        world.polygonsData([...mapData, rewound]);
-    }
-    logMsg("Auto-Coast Optimization Complete");
+    logMsg("Auto-Coast Optimization Applied");
 };
+
 window.finalizeCustom = () => {
     if (drawnPoints.length < 3) return logMsg("Min 3 nodes required");
     const name = prompt("Empire Designation:");
@@ -127,19 +131,18 @@ window.finalizeCustom = () => {
         properties: { ADMIN: name, owner: name, MAPCOLOR7: Math.floor(Math.random()*7)+1, gameStats: { pop: 10000000, mil: 100000 } },
         geometry: { type: 'Polygon', coordinates: [[...drawnPoints, drawnPoints[0]]] }
     };
-    feat = turf.rewind(feat, { reverse: true }); // FIX: Ensure inside fill
+    feat = turf.rewind(feat, { reverse: true });
     mapData.push(feat);
     setupNeighborhoods();
     world.polygonsData(mapData);
     drawnPoints = []; world.pathsData([]); world.pointsData([]);
     logMsg(`Nation Established: ${name}`);
 };
+
 window.clearPen = () => { 
-    drawnPoints = []; 
-    world.pathsData([]); 
-    world.pointsData([]);
-    world.polygonsData(mapData);
+    drawnPoints = []; world.pathsData([]); world.pointsData([]); world.polygonsData(mapData);
 };
+
 window.useNormalBorders = (adminName) => {
     const original = originalMapData.find(f => f.properties.ADMIN === adminName);
     if (!original) return;
@@ -151,13 +154,6 @@ window.useNormalBorders = (adminName) => {
     world.polygonsData(mapData);
     logMsg(`Imported Borders: ${adminName}`);
 };
-
-// Management Globals
-window.deleteGame = deleteGame;
-window.renameGame = renameGame;
-window.exportAllSaves = exportSaves;
-window.triggerImport = () => document.getElementById('import-file').click();
-window.importSave = importSave;
 
 // Initialize
 async function init() {
@@ -189,11 +185,10 @@ async function init() {
 }
 
 function resetMapData() {
-    mapData = []; // Start empty for Builder, but game tick will handle others
+    mapData = []; 
 }
 
 function setupNeighborhoods() {
-    // Only original/custom features in mapData
     mapData.forEach(c1 => {
         c1.properties.neighbors = [];
         const cent1 = getCentroid(c1);
@@ -207,9 +202,8 @@ function setupNeighborhoods() {
 }
 
 function setupWorld() {
-    // Attempt to resolve THREE from various global signatures
-    const _THREE = window.THREE || (window.Globe ? window.Globe.THREE : null);
-    
+    if (!Globe) return console.error("Globe constructor missing");
+
     world = Globe()(document.getElementById('globe-container'))
         .globeImageUrl('https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg')
         .bumpImageUrl('https://unpkg.com/three-globe/example/img/earth-topology.png')
@@ -219,7 +213,7 @@ function setupWorld() {
         .atmosphereAltitude(0.12)
         .polygonsData(mapData)
         .polygonCapColor(d => {
-            if (d.properties.isPreview) return 'rgba(255, 255, 0, 0.4)';
+            if (d.properties.isPreview) return 'rgba(255, 255, 0, 0.2)';
             if (activeMode === 'builder' && d.properties.owner === player.empireName) return PLAYER_COLOR + 'aa';
             const ownerColor = getOwnerColor(d.properties.owner);
             const progs = invasionProgress[d.properties.ADMIN];
@@ -231,7 +225,7 @@ function setupWorld() {
             return ownerColor;
         })
         .polygonSideColor(() => 'rgba(255,255,255,0.05)')
-        .polygonStrokeColor(d => activeMode === 'builder' ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.3)')
+        .polygonStrokeColor(d => activeMode === 'builder' ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)')
         .polygonAltitude(0.01)
         .polygonLabel(d => createTooltip(d))
         .onPolygonHover(d => {
@@ -242,10 +236,10 @@ function setupWorld() {
         .onPolygonRightClick((d, e) => showCtxMenu(d, e))
         .customLayerData(explosionData)
         .customThreeObject(d => {
-            if (!_THREE) return null;
-            const group = new _THREE.Group();
-            const mat = new _THREE.MeshLambertMaterial({ color: 0xff4d4d, transparent: true, opacity: 0.8 });
-            const sphere = new _THREE.Mesh(new _THREE.SphereGeometry(1, 16, 16), mat);
+            if (!THREE) return null;
+            const group = new THREE.Group();
+            const mat = new THREE.MeshLambertMaterial({ color: 0xff4d4d, transparent: true, opacity: 0.8 });
+            const sphere = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 16), mat);
             sphere.position.y = 0.5;
             group.add(sphere);
             return group;
@@ -260,12 +254,18 @@ function setupWorld() {
     world.controls().autoRotateSpeed = 0.3;
     world.pointOfView({ lat: 20, lng: 0, altitude: 2.5 });
 
-    // Builder click handling
     world.onGlobeClick((coords, event) => {
         if (activeMode !== 'builder' || !player.active || !isDrawing) return;
         let point = [coords.lng, coords.lat];
         
-        // AUTO-SNAP: Shift connects last point to first to close polygon
+        // Coast Snapping: If clicking near a coast, snap and trace
+        const coastlines = { type: 'FeatureCollection', features: originalMapData };
+        const snapped = snapToCoast({ type: 'Point', coordinates: point }, coastlines, 2.0);
+        if (Math.abs(snapped[0] - point[0]) > 0.001) {
+            point = snapped;
+            logMsg("Coast Segment Linked");
+        }
+
         if (event.shiftKey && drawnPoints.length > 2) {
             point = [...drawnPoints[0]];
             logMsg("Polygon Loop Closed");
@@ -273,33 +273,28 @@ function setupWorld() {
         
         drawnPoints.push(point);
         
-        // Render Yellow Path
+        // Line-based connection
         world.pathColor(() => '#ffff00')
              .pathStroke(2)
              .pathsData([{ coords: drawnPoints.map(p => [p[1], p[0]]) }]);
         
-        // Show points (vertices)
         world.pointColor(() => '#ffffff')
              .pointRadius(0.2)
              .pointsData(drawnPoints.map(p => ({ lat: p[1], lng: p[0] })));
 
-        // NEW: Filled Preview
+        // Subtle Preview (Faint Fill)
         if (drawnPoints.length > 2) {
             try {
-                const preview = {
+                let preview = {
                     type: 'Feature',
                     properties: { isPreview: true },
                     geometry: { type: 'Polygon', coordinates: [[...drawnPoints, drawnPoints[0]]] }
                 };
-                const rewound = turf.rewind(preview, { reverse: true });
-                if (rewound && rewound.geometry) {
-                    world.polygonsData([...mapData, rewound]);
-                }
-            } catch (e) {
-                console.warn("Preview geometry invalid", e);
-            }
+                preview = turf.rewind(preview, { reverse: true });
+                world.polygonsData([...mapData, preview]);
+            } catch (e) {}
         }
-
+        
         hasUnsavedChanges = true;
     });
 }
@@ -346,6 +341,7 @@ function setupUIEvents() {
 
 function updateSidebarList(matches) {
     const list = document.getElementById('sidebar-nation-list');
+    if (!list) return;
     list.innerHTML = matches.map(m => `
         <div class="sidebar-nation-item" onclick="window.useNormalBorders('${m.properties.ADMIN}')">
             ${m.properties.ADMIN.toUpperCase()}
@@ -362,21 +358,21 @@ function startDeployment() {
     player.empireName = startNode.properties.ADMIN;
     currentGameId = currentGameId || Date.now();
     
-    // In builder, start with only chosen nation
     if (activeMode === 'builder') {
         mapData = [JSON.parse(JSON.stringify(startNode))];
         mapData[0].properties.owner = player.empireName;
-        document.getElementById('builder-sidebar').style.display = 'flex';
+        const sidebar = document.getElementById('builder-sidebar');
+        if (sidebar) sidebar.style.display = 'flex';
         updateSidebarList(originalMapData.slice(0, 50));
     } else {
         mapData = JSON.parse(JSON.stringify(originalMapData));
     }
 
     setupNeighborhoods();
-    document.getElementById('setup-screen').style.display = 'none';
-    document.getElementById('status-bar').style.display = 'flex';
-    document.getElementById('leaderboard').style.display = 'flex';
-    document.getElementById('controls').style.display = 'flex';
+    ['setup-screen', 'status-bar', 'leaderboard', 'controls'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = (id === 'setup-screen' ? 'none' : 'flex');
+    });
     
     world.controls().autoRotate = false;
     const centroid = getCentroid(startNode);
@@ -447,7 +443,6 @@ function createTooltip(d) {
     if (!player.active) return '';
     const p = d.properties;
     if (p.isPreview) return '<div class="tactical-tooltip">PREVIEW SECTOR</div>';
-    
     const stats = p.gameStats || { pop: 0, mil: 0 };
     const ownerColor = getOwnerColor(p.owner);
     return `
