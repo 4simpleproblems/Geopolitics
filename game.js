@@ -207,6 +207,9 @@ function setupNeighborhoods() {
 }
 
 function setupWorld() {
+    // Attempt to resolve THREE from various global signatures
+    const _THREE = window.THREE || (window.Globe ? window.Globe.THREE : null);
+    
     world = Globe()(document.getElementById('globe-container'))
         .globeImageUrl('https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg')
         .bumpImageUrl('https://unpkg.com/three-globe/example/img/earth-topology.png')
@@ -239,10 +242,10 @@ function setupWorld() {
         .onPolygonRightClick((d, e) => showCtxMenu(d, e))
         .customLayerData(explosionData)
         .customThreeObject(d => {
-            if (!window.THREE) return null;
-            const group = new THREE.Group();
-            const mat = new THREE.MeshLambertMaterial({ color: 0xff4d4d, transparent: true, opacity: 0.8 });
-            const sphere = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 16), mat);
+            if (!_THREE) return null;
+            const group = new _THREE.Group();
+            const mat = new _THREE.MeshLambertMaterial({ color: 0xff4d4d, transparent: true, opacity: 0.8 });
+            const sphere = new _THREE.Mesh(new _THREE.SphereGeometry(1, 16, 16), mat);
             sphere.position.y = 0.5;
             group.add(sphere);
             return group;
@@ -250,7 +253,7 @@ function setupWorld() {
         .customThreeObjectUpdate((obj, d) => {
             const scale = d.radius * (1 - d.age);
             obj.scale.set(scale, scale, scale);
-            obj.children[0].material.opacity = 1 - d.age;
+            if (obj.children[0]) obj.children[0].material.opacity = 1 - d.age;
         });
 
     world.controls().autoRotate = true;
