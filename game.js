@@ -239,6 +239,7 @@ function setupWorld() {
         .onPolygonRightClick((d, e) => showCtxMenu(d, e))
         .customLayerData(explosionData)
         .customThreeObject(d => {
+            if (!window.THREE) return null;
             const group = new THREE.Group();
             const mat = new THREE.MeshLambertMaterial({ color: 0xff4d4d, transparent: true, opacity: 0.8 });
             const sphere = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 16), mat);
