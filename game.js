@@ -87,17 +87,23 @@ window.setResolution = (res) => {
 window.togglePenTool = () => {
     isDrawing = !isDrawing;
     document.getElementById('pen-controls').style.display = isDrawing ? 'flex' : 'none';
-    if (!isDrawing) { drawnPoints = []; world.pathsData([]); }
-    logMsg(isDrawing ? "Pen Active: Click vertices" : "Pen Suspended");
+    if (!isDrawing) { 
+        drawnPoints = []; 
+        world.pathsData([]); 
+        world.pointsData([]);
+    }
+    logMsg(isDrawing ? "Pen Active: Click vertices (Shift to Snap)" : "Pen Suspended");
 };
 window.autoCoastFix = () => {
     if (drawnPoints.length < 2) return;
     const coastlines = { type: 'FeatureCollection', features: originalMapData };
     drawnPoints = drawnPoints.map(p => {
         const point = { type: 'Point', coordinates: p };
-        return snapToCoast(point, coastlines, 2.0); // High sensitivity for fix
+        return snapToCoast(point, coastlines, 2.0); 
     });
+    // Update visuals
     world.pathsData([{ coords: drawnPoints.map(p => [p[1], p[0]]) }]);
+    world.pointsData(drawnPoints.map(p => ({ lat: p[1], lng: p[0] })));
     logMsg("Auto-Coast Optimization Complete");
 };
 window.finalizeCustom = () => {
@@ -112,10 +118,14 @@ window.finalizeCustom = () => {
     mapData.push(feat);
     setupNeighborhoods();
     world.polygonsData(mapData);
-    drawnPoints = []; world.pathsData([]);
+    drawnPoints = []; world.pathsData([]); world.pointsData([]);
     logMsg(`Nation Established: ${name}`);
 };
-window.clearPen = () => { drawnPoints = []; world.pathsData([]); };
+window.clearPen = () => { 
+    drawnPoints = []; 
+    world.pathsData([]); 
+    world.pointsData([]);
+};
 window.useNormalBorders = (adminName) => {
     const original = originalMapData.find(f => f.properties.ADMIN === adminName);
     if (!original) return;
@@ -231,18 +241,29 @@ function setupWorld() {
     world.controls().autoRotateSpeed = 0.3;
     world.pointOfView({ lat: 20, lng: 0, altitude: 2.5 });
 
+    // Builder click handling
     world.onGlobeClick((coords, event) => {
         if (activeMode !== 'builder' || !player.active || !isDrawing) return;
         let point = [coords.lng, coords.lat];
-        if (event.shiftKey && drawnPoints.length > 0) {
-            let closestIdx = 0; let minDist = Infinity;
-            drawnPoints.forEach((p, idx) => {
-                const dist = Math.pow(p[0] - point[0], 2) + Math.pow(p[1] - point[1], 2);
-                if (dist < minDist) { minDist = dist; closestIdx = idx; }
-            });
-            drawnPoints[closestIdx] = point;
-        } else { drawnPoints.push(point); }
-        world.pathsData([{ coords: drawnPoints.map(p => [p[1], p[0]]) }]);
+        
+        // AUTO-SNAP: Shift connects last point to first to close polygon
+        if (event.shiftKey && drawnPoints.length > 2) {
+            point = [...drawnPoints[0]];
+            logMsg("Polygon Loop Closed");
+        }
+        
+        drawnPoints.push(point);
+        
+        // Render Yellow Path
+        world.pathColor(() => '#ffff00')
+             .pathStroke(2)
+             .pathsData([{ coords: drawnPoints.map(p => [p[1], p[0]]) }]);
+        
+        // Show points (vertices)
+        world.pointColor(() => '#ffffff')
+             .pointRadius(0.2)
+             .pointsData(drawnPoints.map(p => ({ lat: p[1], lng: p[0] })));
+
         hasUnsavedChanges = true;
     });
 }
