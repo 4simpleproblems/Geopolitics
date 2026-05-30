@@ -32,7 +32,7 @@ const dbPromise = new Promise((resolve, reject) => {
 });
 
 // Colors
-const PLAYER_COLOR = '#0070f3';
+const PLAYER_COLOR = '#0070f3'; // Vercel Blue
 const COLORS = {
     1: '#ff4d4d', 2: '#7928ca', 3: '#00dfd8', 4: '#ffca28', 
     5: '#9b59b6', 6: '#ff0080', 7: '#50e3c2'
@@ -164,6 +164,7 @@ function setupWorld() {
 }
 
 function hexToRgb(hex) {
+    if (!hex) return '255,255,255';
     const r = parseInt(hex.slice(1, 3), 16);
     const g = parseInt(hex.slice(3, 5), 16);
     const b = parseInt(hex.slice(5, 7), 16);
@@ -187,10 +188,12 @@ function setupUIEvents() {
         const val = e.target.value.toLowerCase();
         if (!val) { resultsDiv.style.display = 'none'; return; }
         
-        // SUPPORT ABBREVIATIONS: Check ADMIN and ADM0_A3
+        // SUPPORT ABBREVIATIONS: Check ADMIN, ADM0_A3, ISO_A2, ISO_A3
         const matches = mapData.filter(f => 
             f.properties.ADMIN.toLowerCase().includes(val) || 
-            (f.properties.ADM0_A3 && f.properties.ADM0_A3.toLowerCase() === val)
+            (f.properties.ADM0_A3 && f.properties.ADM0_A3.toLowerCase().includes(val)) ||
+            (f.properties.ISO_A2 && f.properties.ISO_A2.toLowerCase() === val) ||
+            (f.properties.ISO_A3 && f.properties.ISO_A3.toLowerCase() === val)
         );
 
         if (matches.length > 0) {
@@ -249,13 +252,18 @@ function startDeployment() {
     isPaused = false;
     hasUnsavedChanges = false;
     
-    document.getElementById('setup-screen').style.display = 'none';
-    document.getElementById('status-bar').style.display = 'flex';
-    document.getElementById('leaderboard').style.display = 'flex';
-    document.getElementById('controls').style.display = 'flex';
+    const elements = ['setup-screen', 'status-bar', 'leaderboard', 'controls'];
+    elements.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            if (id === 'setup-screen') el.style.display = 'none';
+            else el.style.display = 'flex';
+        }
+    });
     
     if (activeMode === 'builder') {
-        document.getElementById('builder-overlay').style.display = 'flex';
+        const buildOverlay = document.getElementById('builder-overlay');
+        if (buildOverlay) buildOverlay.style.display = 'flex';
     }
 
     world.controls().autoRotate = false;
@@ -308,7 +316,7 @@ function updateLeaderboard() {
     });
     const sorted = Object.entries(scores)
         .sort((a,b) => b[1].terr - a[1].terr || b[1].mil - a[1].mil)
-        .slice(0, 15);
+        .slice(0, 20);
 
     lbList.innerHTML = sorted.map((entry, idx) => `
         <div class="lb-item ${entry[0] === player.empireName ? 'player' : ''}" onclick="window.locateNation('${entry[0]}')">
@@ -320,7 +328,7 @@ function updateLeaderboard() {
 
 function logMsg(msg) {
     const log = document.getElementById('combat-log');
-    log.innerText = msg.toUpperCase();
+    if (log) log.innerText = msg.toUpperCase();
 }
 
 function createTooltip(d) {
@@ -358,15 +366,18 @@ function showCtxMenu(d, e) {
     if (!player.active || activeMode === 'builder' || isPaused) return;
     if (d.properties.owner === player.empireName) return;
     const menu = document.getElementById('ctx-menu');
-    menu.style.display = 'block';
-    menu.style.left = `${e.clientX}px`;
-    menu.style.top = `${e.clientY}px`;
-    window.lastCtxTarget = d;
+    if (menu) {
+        menu.style.display = 'block';
+        menu.style.left = `${e.clientX}px`;
+        menu.style.top = `${e.clientY}px`;
+        window.lastCtxTarget = d;
+    }
 }
 
 function executeAction(type) {
     const target = window.lastCtxTarget;
-    document.getElementById('ctx-menu').style.display = 'none';
+    const menu = document.getElementById('ctx-menu');
+    if (menu) menu.style.display = 'none';
     if (!target) return;
     if (type === 'invade') handlePolygonClick(target);
     if (type === 'nuke') { launchStrike(player.empireName, target); hasUnsavedChanges = true; }
@@ -376,34 +387,45 @@ function executeInvasion(attackerName, targetFeature) {
     const targetName = targetFeature.properties.ADMIN;
     if (invasionProgress[targetName] && invasionProgress[targetName].active) return;
     const attackerLands = mapData.filter(f => f.properties.owner === attackerName);
+    if (attackerLands.length === 0) return;
+
     let attMil = attackerLands.reduce((sum, f) => sum + f.properties.gameStats.mil, 0);
     let defMil = targetFeature.properties.gameStats.mil;
+    
     if (defMil > attMil * 2.5) {
         if (attackerName === player.empireName) logMsg(`Insufficient Force for ${targetName}`);
         return;
     }
+
     const tCentroid = getCentroid(targetFeature);
     const sCentroid = getCentroid(attackerLands[0]); 
-    activeArcs.push({
+    const arc = {
         startLat: sCentroid[1], startLng: sCentroid[0],
         endLat: tCentroid[1], endLng: tCentroid[0],
         color: [getOwnerColor(attackerName), '#ffffff']
-    });
+    };
+    activeArcs.push(arc);
     world.arcsData(activeArcs);
-    invasionProgress[targetName] = { active: true, val: 0, attacker: attackerName };
+
+    invasionProgress[targetName] = { active: true, val: 0, attacker: attackerName, startTime: Date.now() };
     const duration = 2000 + (defMil / 50000) * 1000;
-    const start = Date.now();
+    
     const anim = () => {
-        if (isPaused) { invasionProgress[targetName].startTime = (invasionProgress[targetName].startTime || start) + 16; requestAnimationFrame(anim); return; }
-        const elapsed = Date.now() - (invasionProgress[targetName].startTime || start);
+        if (isPaused) { 
+            invasionProgress[targetName].startTime += 16; 
+            requestAnimationFrame(anim); return; 
+        }
+        const elapsed = Date.now() - invasionProgress[targetName].startTime;
         const prog = Math.min(1, elapsed / duration);
         invasionProgress[targetName].val = prog;
+        
         if (world) world.polygonCapColor(world.polygonCapColor());
         if (prog < 1) requestAnimationFrame(anim);
         else {
-            activeArcs = activeArcs.filter(a => a.endLat !== tCentroid[1] || a.endLng !== tCentroid[0]);
+            activeArcs = activeArcs.filter(a => a !== arc);
             world.arcsData(activeArcs);
             invasionProgress[targetName].active = false;
+            
             if (attMil > defMil * 1.05) {
                 targetFeature.properties.owner = attackerName;
                 targetFeature.properties.gameStats.mil = Math.floor(attMil * 0.05);
@@ -491,7 +513,8 @@ async function pauseAndSaveGame() {
 }
 
 async function saveCampaign() {
-    document.getElementById('saving-overlay').style.display = 'flex';
+    const overlay = document.getElementById('saving-overlay');
+    if (overlay) overlay.style.display = 'flex';
     const db = await dbPromise;
     const saveObj = {
         id: Date.now(),
@@ -505,7 +528,7 @@ async function saveCampaign() {
         tx.objectStore(STORE_NAME).put(saveObj);
         tx.oncomplete = () => {
             setTimeout(() => {
-                document.getElementById('saving-overlay').style.display = 'none';
+                if (overlay) overlay.style.display = 'none';
                 logMsg("Backup successful");
                 hasUnsavedChanges = false;
                 loadSavesFromDB();
@@ -518,11 +541,15 @@ async function saveCampaign() {
 async function loadSavesFromDB() {
     const db = await dbPromise;
     const savesList = document.getElementById('saves-list');
+    if (!savesList) return;
     const tx = db.transaction(STORE_NAME, 'readonly');
     const request = tx.objectStore(STORE_NAME).getAll();
     request.onsuccess = () => {
         const saves = request.result.reverse().slice(0, 10);
-        if (saves.length === 0) return;
+        if (saves.length === 0) {
+            savesList.innerHTML = '<div style="color: #666; font-size: 0.8rem;">No backup states found.</div>';
+            return;
+        }
         savesList.innerHTML = saves.map(s => `
             <div class="save-item" onclick="window.restoreFromDB(${s.id})">
                 <div class="title">${s.empire.toUpperCase()}</div>
@@ -545,7 +572,8 @@ window.restoreFromDB = async (id) => {
             const savedNode = save.mapState.find(n => n.admin === f.properties.ADMIN);
             if (savedNode) { f.properties.owner = savedNode.owner; f.properties.gameStats = savedNode.stats; }
         });
-        document.getElementById('start-country').value = player.empireName;
+        const searchInput = document.getElementById('start-country');
+        if (searchInput) searchInput.value = player.empireName;
         startDeployment();
     };
 };
