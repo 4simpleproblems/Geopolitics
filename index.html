@@ -12,7 +12,6 @@
     
     <script src="https://unpkg.com/three"></script>
     <script src="https://unpkg.com/globe.gl"></script>
-    <script>if (!window.Globe && window.GlobeGl) window.Globe = window.GlobeGl;</script>
     <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
     <link rel="stylesheet" href="style.css">
 </head>
@@ -21,27 +20,6 @@
     <div id="globe-container"></div>
 
     <div id="brand-header">GEOPOLITICS // GLOBAL COMMAND</div>
-
-    <!-- Builder Sidebar -->
-    <div id="builder-sidebar" style="display: none;">
-        <div class="sidebar-header">
-            <h3>COMMAND ATLAS</h3>
-            <p>Select a nation or use custom vectors.</p>
-        </div>
-        <div class="sidebar-search">
-            <input type="text" id="sidebar-country-search" placeholder="Filter nations..." autocomplete="off">
-        </div>
-        <div id="sidebar-nation-list" class="nation-scroll"></div>
-        
-        <div class="sidebar-footer">
-            <button class="menu-btn" onclick="window.togglePenTool()"><i class="fa-solid fa-pen-nib"></i> PEN TOOL</button>
-            <div id="pen-controls" style="display:none; margin-top:10px;">
-                <button class="tiny-btn" onclick="window.autoCoastFix()"><i class="fa-solid fa-wand-magic-sparkles"></i> AUTO-COAST FIX</button>
-                <button class="tiny-btn" onclick="window.finalizeCustom()"><i class="fa-solid fa-check"></i> FINALIZE</button>
-                <button class="tiny-btn danger" onclick="window.clearPen()"><i class="fa-solid fa-trash"></i> CLEAR</button>
-            </div>
-        </div>
-    </div>
 
     <div id="saving-overlay">
         <div class="spinner"></div>
@@ -83,6 +61,7 @@
             <div class="status-item"><i class="fa-solid fa-crown"></i> <span class="status-val" id="val-empire">N/A</span></div>
             <div class="status-item">Sectors <span class="status-val" id="val-terr">0</span></div>
             <div class="status-item">Mil <span class="status-val" id="val-mil">0</span></div>
+            <div class="status-item"><i class="fa-solid fa-clock"></i> <span class="status-val" id="val-time">--:--</span></div>
         </div>
 
         <!-- Leaderboard -->
@@ -174,10 +153,6 @@
                             <div class="mode-card" data-mode="survival">
                                 <strong>SURVIVAL</strong>
                                 <span>Hostile environment. Global AI will target your sectors.</span>
-                            </div>
-                            <div class="mode-card" data-mode="builder">
-                                <strong>BUILDER</strong>
-                                <span>Peaceful mode for custom vector construction.</span>
                             </div>
                         </div>
                     </div>

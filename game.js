@@ -16,11 +16,10 @@ let originalMapData = [];
 let player = { active: false, empireName: '', stats: { pop: 0, mil: 0 } };
 let activeMode = 'takeover'; 
 let hoverCountry = null;
-let drawnPoints = [];
-let isDrawing = false;
 let isPaused = false;
 let hasUnsavedChanges = false;
 let aiInterval = null;
+let clockInterval = null;
 let activeArcs = [];
 let activeRings = [];
 let explosionData = []; 
@@ -28,8 +27,11 @@ let invasionProgress = {};
 let resolution = localStorage.getItem('geo_res') || 'high';
 let currentGameId = null;
 
+// Temporal Mechanics
+let gameDate = new Date(); // Starts at device time
+
 // IndexedDB Setup
-const DB_NAME = 'GeoDB_v4'; 
+const DB_NAME = 'GeoDB_v5'; 
 const STORE_NAME = 'games';
 const dbPromise = new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, 1);
@@ -87,73 +89,12 @@ window.setResolution = (res) => {
     }
 };
 
-// Builder Globals
-window.togglePenTool = () => {
-    isDrawing = !isDrawing;
-    document.getElementById('pen-controls').style.display = isDrawing ? 'flex' : 'none';
-    if (!isDrawing) { drawnPoints = []; world.pathsData([]); world.pointsData([]); world.polygonsData(mapData); }
-    logMsg(isDrawing ? "Pen Active: Click vertices (Shift to Snap)" : "Pen Suspended");
-};
-
-window.autoCoastFix = () => {
-    if (drawnPoints.length < 2) return;
-    const coastlines = { type: 'FeatureCollection', features: originalMapData };
-    
-    // Improved Fix: Injects intermediate coast points between current vertices
-    let optimized = [];
-    for (let i = 0; i < drawnPoints.length; i++) {
-        const p1 = drawnPoints[i];
-        const p2 = drawnPoints[(i + 1) % drawnPoints.length];
-        
-        optimized.push(p1);
-        
-        // Find if segment is near coast
-        const midpoint = [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2];
-        const snappedMid = snapToCoast({ type: 'Point', coordinates: midpoint }, coastlines, 5.0);
-        
-        if (Math.abs(snappedMid[0] - midpoint[0]) > 0.001) {
-            optimized.push(snappedMid);
-        }
-    }
-    
-    drawnPoints = optimized;
-    world.pathsData([{ coords: drawnPoints.map(p => [p[1], p[0]]) }]);
-    world.pointsData(drawnPoints.map(p => ({ lat: p[1], lng: p[0] })));
-    logMsg("Auto-Coast Optimization Applied");
-};
-
-window.finalizeCustom = () => {
-    if (drawnPoints.length < 3) return logMsg("Min 3 nodes required");
-    const name = prompt("Empire Designation:");
-    if (!name) return;
-    let feat = {
-        type: 'Feature',
-        properties: { ADMIN: name, owner: name, MAPCOLOR7: Math.floor(Math.random()*7)+1, gameStats: { pop: 10000000, mil: 100000 } },
-        geometry: { type: 'Polygon', coordinates: [[...drawnPoints, drawnPoints[0]]] }
-    };
-    feat = turf.rewind(feat, { reverse: true });
-    mapData.push(feat);
-    setupNeighborhoods();
-    world.polygonsData(mapData);
-    drawnPoints = []; world.pathsData([]); world.pointsData([]);
-    logMsg(`Nation Established: ${name}`);
-};
-
-window.clearPen = () => { 
-    drawnPoints = []; world.pathsData([]); world.pointsData([]); world.polygonsData(mapData);
-};
-
-window.useNormalBorders = (adminName) => {
-    const original = originalMapData.find(f => f.properties.ADMIN === adminName);
-    if (!original) return;
-    const feat = JSON.parse(JSON.stringify(original));
-    feat.properties.owner = adminName;
-    mapData = mapData.filter(f => f.properties.ADMIN !== adminName);
-    mapData.push(feat);
-    setupNeighborhoods();
-    world.polygonsData(mapData);
-    logMsg(`Imported Borders: ${adminName}`);
-};
+// Management Globals
+window.deleteGame = deleteGame;
+window.renameGame = renameGame;
+window.exportAllSaves = exportSaves;
+window.triggerImport = () => document.getElementById('import-file').click();
+window.importSave = importSave;
 
 // Initialize
 async function init() {
@@ -185,7 +126,7 @@ async function init() {
 }
 
 function resetMapData() {
-    mapData = []; 
+    mapData = JSON.parse(JSON.stringify(originalMapData));
 }
 
 function setupNeighborhoods() {
@@ -213,8 +154,6 @@ function setupWorld() {
         .atmosphereAltitude(0.12)
         .polygonsData(mapData)
         .polygonCapColor(d => {
-            if (d.properties.isPreview) return 'rgba(255, 255, 0, 0.2)';
-            if (activeMode === 'builder' && d.properties.owner === player.empireName) return PLAYER_COLOR + 'aa';
             const ownerColor = getOwnerColor(d.properties.owner);
             const progs = invasionProgress[d.properties.ADMIN];
             if (progs && progs.length > 0) {
@@ -225,7 +164,7 @@ function setupWorld() {
             return ownerColor;
         })
         .polygonSideColor(() => 'rgba(255,255,255,0.05)')
-        .polygonStrokeColor(d => activeMode === 'builder' ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)')
+        .polygonStrokeColor(d => 'rgba(0,0,0,0.3)')
         .polygonAltitude(0.01)
         .polygonLabel(d => createTooltip(d))
         .onPolygonHover(d => {
@@ -253,50 +192,14 @@ function setupWorld() {
     world.controls().autoRotate = true;
     world.controls().autoRotateSpeed = 0.3;
     world.pointOfView({ lat: 20, lng: 0, altitude: 2.5 });
+}
 
-    world.onGlobeClick((coords, event) => {
-        if (activeMode !== 'builder' || !player.active || !isDrawing) return;
-        let point = [coords.lng, coords.lat];
-        
-        // Coast Snapping: If clicking near a coast, snap and trace
-        const coastlines = { type: 'FeatureCollection', features: originalMapData };
-        const snapped = snapToCoast({ type: 'Point', coordinates: point }, coastlines, 2.0);
-        if (Math.abs(snapped[0] - point[0]) > 0.001) {
-            point = snapped;
-            logMsg("Coast Segment Linked");
-        }
-
-        if (event.shiftKey && drawnPoints.length > 2) {
-            point = [...drawnPoints[0]];
-            logMsg("Polygon Loop Closed");
-        }
-        
-        drawnPoints.push(point);
-        
-        // Line-based connection
-        world.pathColor(() => '#ffff00')
-             .pathStroke(2)
-             .pathsData([{ coords: drawnPoints.map(p => [p[1], p[0]]) }]);
-        
-        world.pointColor(() => '#ffffff')
-             .pointRadius(0.2)
-             .pointsData(drawnPoints.map(p => ({ lat: p[1], lng: p[0] })));
-
-        // Subtle Preview (Faint Fill)
-        if (drawnPoints.length > 2) {
-            try {
-                let preview = {
-                    type: 'Feature',
-                    properties: { isPreview: true },
-                    geometry: { type: 'Polygon', coordinates: [[...drawnPoints, drawnPoints[0]]] }
-                };
-                preview = turf.rewind(preview, { reverse: true });
-                world.polygonsData([...mapData, preview]);
-            } catch (e) {}
-        }
-        
-        hasUnsavedChanges = true;
-    });
+function hexToRgb(hex) {
+    if (!hex) return '255,255,255';
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `${r}, ${g}, ${b}`;
 }
 
 function setupUIEvents() {
@@ -309,44 +212,35 @@ function setupUIEvents() {
     });
 
     const searchInput = document.getElementById('start-country');
-    const sidebarSearch = document.getElementById('sidebar-country-search');
     
-    [searchInput, sidebarSearch].forEach(input => {
-        if (!input) return;
-        input.addEventListener('input', (e) => {
+    if (searchInput) {
+        searchInput.addEventListener('input', (e) => {
             const val = e.target.value.toLowerCase();
-            const resultsDiv = input.id === 'start-country' ? document.getElementById('search-results') : null;
+            const resultsDiv = document.getElementById('search-results');
             
             const matches = originalMapData.filter(f => 
                 f.properties.ADMIN.toLowerCase().includes(val) || 
                 (f.properties.ADM0_A3 && f.properties.ADM0_A3.toLowerCase().includes(val))
-            ).slice(0, input.id === 'start-country' ? 8 : 50);
+            ).slice(0, 8);
 
-            if (input.id === 'start-country') {
-                if (!val) { resultsDiv.style.display = 'none'; return; }
-                resultsDiv.innerHTML = matches.map(m => `<div class="search-item">${m.properties.ADMIN}</div>`).join('');
-                resultsDiv.style.display = 'block';
-                document.querySelectorAll('.search-item').forEach(item => {
-                    item.addEventListener('click', (ev) => {
-                        searchInput.value = ev.target.innerText;
-                        resultsDiv.style.display = 'none';
-                    });
+            if (!val) { resultsDiv.style.display = 'none'; return; }
+            resultsDiv.innerHTML = matches.map(m => `<div class="search-item">${m.properties.ADMIN}</div>`).join('');
+            resultsDiv.style.display = 'block';
+            document.querySelectorAll('.search-item').forEach(item => {
+                item.addEventListener('click', (ev) => {
+                    searchInput.value = ev.target.innerText;
+                    resultsDiv.style.display = 'none';
                 });
-            } else {
-                updateSidebarList(matches);
-            }
+            });
         });
-    });
-}
+    }
 
-function updateSidebarList(matches) {
-    const list = document.getElementById('sidebar-nation-list');
-    if (!list) return;
-    list.innerHTML = matches.map(m => `
-        <div class="sidebar-nation-item" onclick="window.useNormalBorders('${m.properties.ADMIN}')">
-            ${m.properties.ADMIN.toUpperCase()}
-        </div>
-    `).join('');
+    document.addEventListener('click', (e) => {
+        const resultsDiv = document.getElementById('search-results');
+        const searchInput = document.getElementById('start-country');
+        if(resultsDiv && e.target !== searchInput && e.target !== resultsDiv) resultsDiv.style.display = 'none';
+        if(e.button !== 2 && document.getElementById('ctx-menu')) document.getElementById('ctx-menu').style.display = 'none';
+    });
 }
 
 function startDeployment() {
@@ -358,21 +252,17 @@ function startDeployment() {
     player.empireName = startNode.properties.ADMIN;
     currentGameId = currentGameId || Date.now();
     
-    if (activeMode === 'builder') {
-        mapData = [JSON.parse(JSON.stringify(startNode))];
-        mapData[0].properties.owner = player.empireName;
-        const sidebar = document.getElementById('builder-sidebar');
-        if (sidebar) sidebar.style.display = 'flex';
-        updateSidebarList(originalMapData.slice(0, 50));
-    } else {
-        mapData = JSON.parse(JSON.stringify(originalMapData));
+    // Time starts at device time if new game
+    if (!currentGameId || currentGameId === Date.now()) {
+        gameDate = new Date();
     }
 
+    resetMapData();
     setupNeighborhoods();
-    ['setup-screen', 'status-bar', 'leaderboard', 'controls'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.style.display = (id === 'setup-screen' ? 'none' : 'flex');
-    });
+    document.getElementById('setup-screen').style.display = 'none';
+    document.getElementById('status-bar').style.display = 'flex';
+    document.getElementById('leaderboard').style.display = 'flex';
+    document.getElementById('controls').style.display = 'flex';
     
     world.controls().autoRotate = false;
     const centroid = getCentroid(startNode);
@@ -380,9 +270,25 @@ function startDeployment() {
 
     updateUI(); updateLeaderboard();
     logMsg(`DEPLOYMENT: ${startNode.properties.ADMIN}`);
-    if (activeMode !== 'builder') {
-        if (aiInterval) clearInterval(aiInterval);
-        aiInterval = setInterval(gameTick, 2000);
+    
+    if (aiInterval) clearInterval(aiInterval);
+    aiInterval = setInterval(gameTick, 2000);
+
+    if (clockInterval) clearInterval(clockInterval);
+    clockInterval = setInterval(updateClock, 1000); // 1 real sec = 1 game month
+}
+
+function updateClock() {
+    if (isPaused || !player.active) return;
+    
+    // 1 real minute = 5 years = 60 months
+    // 1 real second = 1 month
+    gameDate.setMonth(gameDate.getMonth() + 1);
+    
+    const timeEl = document.getElementById('val-time');
+    if (timeEl) {
+        const options = { month: 'short', year: 'numeric' };
+        timeEl.innerText = gameDate.toLocaleDateString('en-US', options).toUpperCase();
     }
 }
 
@@ -411,11 +317,6 @@ function updateUI() {
 }
 
 function updateLeaderboard() {
-    if (activeMode === 'builder') {
-        const lb = document.getElementById('leaderboard');
-        if (lb) lb.style.display = 'none';
-        return;
-    }
     const lbList = document.getElementById('lb-list');
     if (!lbList) return;
     let scores = {};
@@ -442,7 +343,6 @@ function logMsg(msg) {
 function createTooltip(d) {
     if (!player.active) return '';
     const p = d.properties;
-    if (p.isPreview) return '<div class="tactical-tooltip">PREVIEW SECTOR</div>';
     const stats = p.gameStats || { pop: 0, mil: 0 };
     const ownerColor = getOwnerColor(p.owner);
     return `
@@ -461,7 +361,7 @@ function createTooltip(d) {
 }
 
 function handlePolygonClick(d, e) {
-    if (!player.active || activeMode === 'builder' || isPaused) return;
+    if (!player.active || isPaused) return;
     if (d.properties.owner === player.empireName) return;
     const playerLands = mapData.filter(f => f.properties.owner === player.empireName);
     const isBordering = playerLands.some(land => land.properties.neighbors.includes(d.properties.ADMIN));
@@ -470,7 +370,7 @@ function handlePolygonClick(d, e) {
 }
 
 function showCtxMenu(d, e) {
-    if (!player.active || activeMode === 'builder' || isPaused) return;
+    if (!player.active || isPaused) return;
     if (d.properties.owner === player.empireName) return;
     const menu = document.getElementById('ctx-menu');
     if (menu) {
@@ -602,7 +502,7 @@ function gameTick() {
         if (totalMil > target.properties.gameStats.mil * 1.5 && target.properties.gameStats.mil < totalMil * 0.6) executeInvasion(emp, target, 'border');
     });
     updateUI(); updateLeaderboard();
-    if (mapData.filter(f => f.properties.owner === player.empireName).length === 0 && activeMode !== 'builder') {
+    if (mapData.filter(f => f.properties.owner === player.empireName).length === 0) {
         logMsg("Network Collapse: Domain Lost");
         player.active = false; clearInterval(aiInterval);
     }
@@ -627,7 +527,8 @@ async function saveCampaign() {
     const db = await dbPromise;
     const saveObj = {
         id: currentGameId, date: new Date().toLocaleString(), mode: activeMode, empire: player.empireName,
-        mapState: mapData.map(f => ({ admin: f.properties.ADMIN, owner: f.properties.owner, stats: f.properties.gameStats, geom: f.geometry }))
+        gameDate: gameDate.getTime(),
+        mapState: mapData.map(f => ({ admin: f.properties.ADMIN, owner: f.properties.owner, stats: f.properties.gameStats }))
     };
     const tx = db.transaction(STORE_NAME, 'readwrite');
     tx.objectStore(STORE_NAME).put(saveObj);
@@ -714,9 +615,10 @@ window.restoreFromDB = async (id) => {
     request.onsuccess = () => {
         const save = request.result; if (!save) return;
         activeMode = save.mode; player.empireName = save.empire; currentGameId = save.id;
+        gameDate = new Date(save.gameDate || Date.now());
         mapData = save.mapState.map(s => ({
             type: 'Feature', properties: { ADMIN: s.admin, owner: s.owner, gameStats: s.stats },
-            geometry: s.geom || originalMapData.find(f => f.properties.ADMIN === s.admin).geometry
+            geometry: originalMapData.find(f => f.properties.ADMIN === s.admin).geometry
         }));
         const searchInput = document.getElementById('start-country');
         if (searchInput) searchInput.value = player.empireName;
