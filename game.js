@@ -2,11 +2,20 @@
  * Geopolitics - Main Engine
  */
 
+import Globe from 'globe.gl';
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { formatNum, getFuzzy, getCentroid, snapToCoast } from './utils.js';
 
-// Global Reference Hardening
-const Globe = window.Globe || window.GlobeGl;
-const THREE = window.THREE;
+let sunGroup;
+let sunLight;
+let starField;
+let jupiterGroup;
+let saturnGroup;
+let marsGroup;
+let bloomPass;
 
 let world;
 let mapData = [];
@@ -142,6 +151,39 @@ function setupNeighborhoods() {
     });
 }
 
+function getSunPosition(date) {
+    const month = date.getMonth();
+    const angle = (month / 12) * Math.PI * 2;
+    const tilt = 23.44 * Math.PI / 180;
+    const radius = 1200;
+    const x = radius * Math.cos(angle);
+    const y = radius * Math.sin(angle) * Math.sin(tilt);
+    const z = radius * Math.sin(angle) * Math.cos(tilt);
+    return new THREE.Vector3(x, y, z);
+}
+
+function animate() {
+    requestAnimationFrame(animate);
+    if (player.active) {
+        const sunPos = getSunPosition(gameDate);
+        if (sunGroup) sunGroup.position.copy(sunPos);
+        if (sunLight) sunLight.position.copy(sunPos);
+    } else {
+        const time = Date.now() * 0.0001;
+        const x = 1200 * Math.cos(time);
+        const z = 1200 * Math.sin(time);
+        if (sunGroup) sunGroup.position.set(x, 200, z);
+        if (sunLight) sunLight.position.set(x, 200, z);
+    }
+    if (starField) {
+        starField.rotation.y += 0.00008;
+        starField.rotation.x += 0.00004;
+    }
+    if (jupiterGroup) jupiterGroup.rotation.y += 0.002;
+    if (saturnGroup) saturnGroup.rotation.y += 0.003;
+    if (marsGroup) marsGroup.rotation.y += 0.004;
+}
+
 function setupWorld() {
     if (!Globe) return console.error("Globe constructor missing");
 
@@ -150,8 +192,8 @@ function setupWorld() {
         .bumpImageUrl('https://unpkg.com/three-globe/example/img/earth-topology.png')
         .backgroundColor('#000000')
         .showAtmosphere(true)
-        .atmosphereColor('#ffffff')
-        .atmosphereAltitude(0.12)
+        .atmosphereColor('#0070f3')
+        .atmosphereAltitude(0.15)
         .polygonsData(mapData)
         .polygonCapColor(d => {
             const ownerColor = getOwnerColor(d.properties.owner);
@@ -177,7 +219,7 @@ function setupWorld() {
         .customThreeObject(d => {
             if (!THREE) return null;
             const group = new THREE.Group();
-            const mat = new THREE.MeshLambertMaterial({ color: 0xff4d4d, transparent: true, opacity: 0.8 });
+            const mat = new THREE.MeshBasicMaterial({ color: 0xff4d4d, transparent: true, opacity: 0.9 });
             const sphere = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 16), mat);
             sphere.position.y = 0.5;
             group.add(sphere);
@@ -192,6 +234,163 @@ function setupWorld() {
     world.controls().autoRotate = true;
     world.controls().autoRotateSpeed = 0.3;
     world.pointOfView({ lat: 20, lng: 0, altitude: 2.5 });
+
+    const globeMat = world.globeMaterial();
+    if (globeMat) {
+        globeMat.bumpScale = 15;
+        if (globeMat.specular) globeMat.specular.setHex(0x333333);
+        if (globeMat.shininess !== undefined) globeMat.shininess = 25;
+    }
+
+    const lightsToRemove = [];
+    world.scene().traverse(child => {
+        if (child.isLight) {
+            lightsToRemove.push(child);
+        }
+    });
+    lightsToRemove.forEach(light => world.scene().remove(light));
+
+    const ambientLight = new THREE.AmbientLight(0x223355, 0.4);
+    world.scene().add(ambientLight);
+
+    sunLight = new THREE.DirectionalLight(0xfff5ea, 1.8);
+    world.scene().add(sunLight);
+
+    const starGeo = new THREE.BufferGeometry();
+    const starCoords = [];
+    for (let i = 0; i < 2000; i++) {
+        const x = (Math.random() - 0.5) * 4000;
+        const y = (Math.random() - 0.5) * 4000;
+        const z = (Math.random() - 0.5) * 4000;
+        const dist = Math.sqrt(x * x + y * y + z * z);
+        if (dist < 1000) {
+            i--;
+            continue;
+        }
+        starCoords.push(x, y, z);
+    }
+    starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starCoords, 3));
+    const starMat = new THREE.PointsMaterial({
+        color: 0xffffff,
+        size: 1.5,
+        transparent: true,
+        opacity: 0.8,
+        sizeAttenuation: true
+    });
+    starField = new THREE.Points(starGeo, starMat);
+    world.scene().add(starField);
+
+    sunGroup = new THREE.Group();
+    const sunGeo = new THREE.SphereGeometry(45, 32, 32);
+    const sunMat = new THREE.MeshBasicMaterial({
+        color: 0xffeaad,
+        toneMapped: false
+    });
+    const sunMesh = new THREE.Mesh(sunGeo, sunMat);
+    sunGroup.add(sunMesh);
+
+    const glowGeo = new THREE.SphereGeometry(52, 32, 32);
+    const glowMat = new THREE.MeshBasicMaterial({
+        color: 0xff8800,
+        transparent: true,
+        opacity: 0.25,
+        blending: THREE.AdditiveBlending,
+        side: THREE.BackSide
+    });
+    const glowMesh = new THREE.Mesh(glowGeo, glowMat);
+    sunGroup.add(glowMesh);
+
+    world.scene().add(sunGroup);
+
+    jupiterGroup = new THREE.Group();
+    const jupiterGeo = new THREE.SphereGeometry(25, 32, 32);
+    const jupiterMat = new THREE.MeshPhongMaterial({
+        color: 0xd4a373,
+        shininess: 5,
+        bumpScale: 1
+    });
+    const jupiterMesh = new THREE.Mesh(jupiterGeo, jupiterMat);
+    jupiterGroup.add(jupiterMesh);
+    jupiterGroup.position.set(-800, 150, -800);
+    world.scene().add(jupiterGroup);
+
+    saturnGroup = new THREE.Group();
+    const saturnGeo = new THREE.SphereGeometry(18, 32, 32);
+    const saturnMat = new THREE.MeshPhongMaterial({
+        color: 0xe9d8a6,
+        shininess: 5
+    });
+    const saturnMesh = new THREE.Mesh(saturnGeo, saturnMat);
+    saturnGroup.add(saturnMesh);
+
+    const ringGeo = new THREE.RingGeometry(24, 38, 64);
+    ringGeo.rotateX(Math.PI / 2.5);
+    const ringMat = new THREE.MeshBasicMaterial({
+        color: 0x94d2bd,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.3
+    });
+    const ringMesh = new THREE.Mesh(ringGeo, ringMat);
+    saturnGroup.add(ringMesh);
+    saturnGroup.position.set(900, -200, -600);
+    world.scene().add(saturnGroup);
+
+    marsGroup = new THREE.Group();
+    const marsGeo = new THREE.SphereGeometry(10, 32, 32);
+    const marsMat = new THREE.MeshPhongMaterial({
+        color: 0xc67b5c,
+        shininess: 2
+    });
+    const marsMesh = new THREE.Mesh(marsGeo, marsMat);
+    marsGroup.add(marsMesh);
+    marsGroup.position.set(-400, -100, 800);
+    world.scene().add(marsGroup);
+
+    const orbitMaterial = new THREE.LineBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.03
+    });
+    const createOrbit = (radius) => {
+        const points = [];
+        for (let i = 0; i <= 64; i++) {
+            const theta = (i / 64) * Math.PI * 2;
+            points.push(new THREE.Vector3(radius * Math.cos(theta), 0, radius * Math.sin(theta)));
+        }
+        const orbitGeo = new THREE.BufferGeometry().setFromPoints(points);
+        const orbitLine = new THREE.Line(orbitGeo, orbitMaterial);
+        orbitLine.rotation.x = 0.15;
+        return orbitLine;
+    };
+    world.scene().add(createOrbit(600));
+    world.scene().add(createOrbit(1000));
+    world.scene().add(createOrbit(1300));
+
+    const composer = world.postProcessingComposer();
+    const scene = world.scene();
+    const camera = world.camera();
+    composer.passes = [];
+    composer.addPass(new RenderPass(scene, camera));
+
+    bloomPass = new UnrealBloomPass(
+        new THREE.Vector2(window.innerWidth, window.innerHeight),
+        0.8,
+        0.4,
+        0.25
+    );
+    composer.addPass(bloomPass);
+
+    window.addEventListener('resize', () => {
+        if (world && bloomPass) {
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+            composer.setSize(width, height);
+            bloomPass.setSize(width, height);
+        }
+    });
+
+    animate();
 }
 
 function hexToRgb(hex) {
