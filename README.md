@@ -22,6 +22,3 @@ A minimalist, high-fidelity global strategy simulation and territorial builder.
 1. Open `index.html` in a modern browser.
 2. Enter your starting nation.
 3. Use the **Build Mode** to reshape the world or **Initiate Takeover** to expand your empire.
-
----
-Made with ❤️ from 4SP

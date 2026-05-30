@@ -1,6 +1,5 @@
 /**
  * Geopolitics - Main Engine
- * Made with ❤️ from 4SP
  */
 
 import { formatNum, getFuzzy, getCentroid, mergeCountries, snapToCoast } from './utils.js';

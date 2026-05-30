@@ -1,6 +1,5 @@
 /**
  * Geopolitics - Utility Functions
- * Made with ❤️ from 4SP
  */
 
 export const formatNum = (num) => {
