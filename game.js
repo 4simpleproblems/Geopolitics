@@ -24,25 +24,45 @@ let drawnPoints = [];
 let activeRings = [];
 let activeArcs = [];
 
-const GEO_URL = 'https://unpkg.com/three-globe/example/img/custom.geo.json';
+const GEO_URL = './map.geojson';
+
+// Expose global functions immediately to avoid ReferenceError
+window.initializeGame = () => {
+    if (window.deploymentPending) startDeployment();
+    else logMsg("Interface initializing...");
+};
+window.handleAction = executeAction;
+window.deploymentPending = false;
 
 // Initialize the engine
 async function init() {
-    const res = await fetch(GEO_URL);
-    const data = await res.json();
-    
-    mapData = data.features.map(f => {
-        const p = f.properties;
-        const pop = p.POP_EST || 1000000;
-        const gdp = p.GDP_MD_EST || 10000;
-        f.properties.gameStats = {
-            pop: pop,
-            mil: Math.floor(pop * 0.01),
-            econ: gdp * 1000000
-        };
-        return f;
-    });
+    try {
+        const res = await fetch(GEO_URL);
+        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+        const data = await res.json();
+        
+        mapData = data.features.map(f => {
+            const p = f.properties;
+            const pop = p.POP_EST || 1000000;
+            const gdp = p.GDP_MD_EST || 10000;
+            f.properties.gameStats = {
+                pop: pop,
+                mil: Math.floor(pop * 0.01),
+                econ: gdp * 1000000
+            };
+            return f;
+        });
 
+        setupWorld();
+        window.deploymentPending = true;
+        logMsg("System Ready");
+    } catch (err) {
+        console.error("Critical Engine Failure:", err);
+        logMsg("Data Link Failure");
+    }
+}
+
+function setupWorld() {
     world = Globe()(document.getElementById('globe-container'))
         .globeImageUrl('https://unpkg.com/three-globe/example/img/earth-dark.jpg')
         .backgroundColor('#020204')
@@ -62,7 +82,7 @@ async function init() {
         .polygonLabel(d => createTooltip(d))
         .onPolygonHover(d => {
             hoverCountry = d;
-            world.polygonCapColor(world.polygonCapColor());
+            if (world) world.polygonCapColor(world.polygonCapColor());
         })
         .onPolygonClick(d => handlePolygonClick(d))
         .onPolygonRightClick((d, e) => showCtxMenu(d, e));
@@ -70,10 +90,6 @@ async function init() {
     world.controls().autoRotate = true;
     world.controls().autoRotateSpeed = 0.5;
 
-    // Attach global listeners for UI
-    window.initializeGame = startDeployment;
-    window.handleAction = executeAction;
-    
     document.getElementById('btn-draw').onclick = toggleBuildMode;
     document.getElementById('btn-merge').onclick = toggleMergeMode;
 }
