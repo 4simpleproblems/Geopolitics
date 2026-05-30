@@ -19,8 +19,9 @@ let hasUnsavedChanges = false;
 let aiInterval = null;
 let activeArcs = [];
 let activeRings = [];
-let explosionData = []; // For 3D explosions
+let explosionData = []; 
 let invasionProgress = {}; 
+let resolution = localStorage.getItem('geo_res') || 'high';
 
 // IndexedDB Setup
 const DB_NAME = 'GeoDB';
@@ -66,6 +67,21 @@ window.saveGame = saveCampaign;
 window.locateNation = locateAndPulse;
 window.pauseAndSave = pauseAndSaveGame;
 window.exitToMenu = exitToMenuFlow;
+window.showSettings = () => { document.getElementById('settings-overlay').style.display = 'flex'; };
+window.hideSettings = () => { document.getElementById('settings-overlay').style.display = 'none'; };
+window.setResolution = (res) => {
+    resolution = res;
+    localStorage.setItem('geo_res', res);
+    document.getElementById('res-high').classList.toggle('active', res === 'high');
+    document.getElementById('res-low').classList.toggle('active', res === 'low');
+    if (res === 'low') {
+        world.arcsData([]);
+        world.customLayerData([]);
+    } else {
+        world.arcsData(activeArcs);
+        world.customLayerData(explosionData);
+    }
+};
 window.deploymentPending = false;
 
 // Initialize
@@ -90,6 +106,7 @@ async function init() {
         loadSavesFromDB();
         
         window.deploymentPending = true;
+        window.setResolution(resolution);
     } catch (err) {
         console.error("Engine Fault:", err);
         logMsg("Data link failure");
@@ -108,7 +125,9 @@ function setupNeighborhoods() {
             if (c1 === c2) return;
             const cent2 = getCentroid(c2);
             const dist = Math.sqrt(Math.pow(cent1[0] - cent2[0], 2) + Math.pow(cent1[1] - cent2[1], 2));
-            if (dist < 25) c1.properties.neighbors.push(c2.properties.ADMIN);
+            // INCREASED THRESHOLD: USA & Canada fix (approx distance between centroids is large)
+            // Using a permissive 80 threshold to catch giant neighbors
+            if (dist < 80) c1.properties.neighbors.push(c2.properties.ADMIN);
         });
     });
 }
@@ -142,7 +161,6 @@ function setupWorld() {
         })
         .onPolygonClick((d, e) => handlePolygonClick(d, e))
         .onPolygonRightClick((d, e) => showCtxMenu(d, e))
-        // 3D EXPLOSION LAYER
         .customLayerData(explosionData)
         .customThreeObject(d => {
             const group = new THREE.Group();
@@ -158,7 +176,6 @@ function setupWorld() {
             obj.children[0].material.opacity = 1 - d.age;
         });
 
-    // Slow rotation & Tilted axis for Menu
     world.controls().autoRotate = true;
     world.controls().autoRotateSpeed = 0.3;
     world.pointOfView({ lat: 20, lng: 0, altitude: 2.5 });
@@ -205,20 +222,17 @@ function setupUIEvents() {
     searchInput.addEventListener('input', (e) => {
         const val = e.target.value.toLowerCase();
         if (!val) { resultsDiv.style.display = 'none'; return; }
-        
         const matches = mapData.filter(f => 
             f.properties.ADMIN.toLowerCase().includes(val) || 
             (f.properties.ADM0_A3 && f.properties.ADM0_A3.toLowerCase().includes(val)) ||
             (f.properties.ISO_A2 && f.properties.ISO_A2.toLowerCase() === val) ||
             (f.properties.ISO_A3 && f.properties.ISO_A3.toLowerCase() === val)
         );
-
         if (matches.length > 0) {
             resultsDiv.innerHTML = matches.slice(0, 8).map(m => 
                 `<div class="search-item">${m.properties.ADMIN} ${m.properties.ADM0_A3 ? `(${m.properties.ADM0_A3})` : ''}</div>`
             ).join('');
             resultsDiv.style.display = 'block';
-            
             document.querySelectorAll('.search-item').forEach(item => {
                 item.addEventListener('click', (ev) => {
                     const name = ev.target.innerText.split(' (')[0];
@@ -289,7 +303,7 @@ function startDeployment() {
 
     updateUI();
     updateLeaderboard();
-    logMsg(`Deployment successful: ${startNode.properties.ADMIN}`);
+    logMsg(`System Online: ${startNode.properties.ADMIN}`);
 
     if (activeMode !== 'builder') {
         if (aiInterval) clearInterval(aiInterval);
@@ -379,8 +393,10 @@ function handlePolygonClick(d, e) {
     if (d.properties.owner === player.empireName) return;
     const playerLands = mapData.filter(f => f.properties.owner === player.empireName);
     const isBordering = playerLands.some(land => land.properties.neighbors.includes(d.properties.ADMIN));
-    if (!isBordering) return logMsg("Tactical Block: No Common Border");
-    executeInvasion(player.empireName, d);
+    
+    // AIR INVASION (Across countries): Use White Arc
+    const type = isBordering ? 'border' : 'air';
+    executeInvasion(player.empireName, d, type);
     hasUnsavedChanges = true;
 }
 
@@ -405,7 +421,7 @@ function executeAction(type) {
     if (type === 'nuke') { launchStrike(player.empireName, target); hasUnsavedChanges = true; }
 }
 
-function executeInvasion(attackerName, targetFeature) {
+function executeInvasion(attackerName, targetFeature, type = 'border') {
     const targetName = targetFeature.properties.ADMIN;
     if (invasionProgress[targetName] && invasionProgress[targetName].active) return;
     const attackerLands = mapData.filter(f => f.properties.owner === attackerName);
@@ -414,23 +430,30 @@ function executeInvasion(attackerName, targetFeature) {
     let attMil = attackerLands.reduce((sum, f) => sum + f.properties.gameStats.mil, 0);
     let defMil = targetFeature.properties.gameStats.mil;
     
-    if (defMil > attMil * 2.5) {
-        if (attackerName === player.empireName) logMsg(`Defensive Overpower: ${targetName}`);
+    // Air invasions are costlier/riskier
+    const threshold = type === 'air' ? 4.0 : 2.5;
+    if (defMil > attMil * threshold) {
+        if (attackerName === player.empireName) logMsg(`${type.toUpperCase()} ASSAULT IMPOSSIBLE: ${targetName}`);
         return;
     }
 
     const tCentroid = getCentroid(targetFeature);
     const sCentroid = getCentroid(attackerLands[0]); 
+    const arcColor = type === 'air' ? ['#ffffff', '#ffffff'] : [getOwnerColor(attackerName), '#ffffff'];
+    
     const arc = {
         startLat: sCentroid[1], startLng: sCentroid[0],
         endLat: tCentroid[1], endLng: tCentroid[0],
-        color: [getOwnerColor(attackerName), '#ffffff']
+        color: arcColor
     };
-    activeArcs.push(arc);
-    world.arcsData(activeArcs);
+    
+    if (resolution === 'high') {
+        activeArcs.push(arc);
+        world.arcsData(activeArcs);
+    }
 
     invasionProgress[targetName] = { active: true, val: 0, attacker: attackerName, startTime: Date.now() };
-    const duration = 2000 + (defMil / 50000) * 1000;
+    const duration = (type === 'air' ? 4000 : 2000) + (defMil / 50000) * 1000;
     
     const anim = () => {
         if (isPaused) { 
@@ -452,10 +475,10 @@ function executeInvasion(attackerName, targetFeature) {
                 targetFeature.properties.owner = attackerName;
                 targetFeature.properties.gameStats.mil = Math.floor(attMil * 0.05);
                 attackerLands.forEach(f => f.properties.gameStats.mil = Math.floor(f.properties.gameStats.mil * 0.9));
-                if (attackerName === player.empireName) logMsg(`Annexation Complete: ${targetName}`);
+                if (attackerName === player.empireName) logMsg(`${type.toUpperCase()} SUCCESS: ${targetName}`);
             } else {
                 attackerLands.forEach(f => f.properties.gameStats.mil = Math.floor(f.properties.gameStats.mil * 0.5));
-                if (attackerName === player.empireName) logMsg(`Offensive Repelled: ${targetName}`);
+                if (attackerName === player.empireName) logMsg(`${type.toUpperCase()} FAILURE: ${targetName}`);
             }
             updateUI(); updateLeaderboard();
         }
@@ -468,42 +491,50 @@ function launchStrike(attackerName, targetFeature) {
     const attackerLands = mapData.filter(f => f.properties.owner === attackerName);
     if (attackerLands.length === 0) return;
     const startCentroid = getCentroid(attackerLands[0]);
-    activeArcs.push({
+
+    const arc = {
         startLat: startCentroid[1], startLng: startCentroid[0],
         endLat: centroid[1], endLng: centroid[0],
-        color: ['#ffffff', '#ee0000']
-    });
-    world.arcsData(activeArcs);
+        color: ['#ffff00', '#ee0000'] // YELLOW ARCS FOR BOMBS
+    };
+    
+    if (resolution === 'high') {
+        activeArcs.push(arc);
+        world.arcsData(activeArcs);
+    }
 
     setTimeout(() => {
-        activeArcs = activeArcs.filter(a => a.endLat !== centroid[1] || a.endLng !== centroid[0]);
+        activeArcs = activeArcs.filter(a => a !== arc);
         world.arcsData(activeArcs);
         
-        // 3D EXPLOSION OBJECT
-        const boom = { lat: centroid[1], lng: centroid[0], radius: 15, age: 0 };
-        explosionData.push(boom);
-        world.customLayerData(explosionData);
+        if (resolution === 'high') {
+            const boom = { lat: centroid[1], lng: centroid[0], radius: 15, age: 0 };
+            explosionData.push(boom);
+            world.customLayerData(explosionData);
+            const boomAnim = () => {
+                boom.age += 0.02;
+                if (boom.age < 1) {
+                    world.customLayerData(explosionData);
+                    requestAnimationFrame(boomAnim);
+                } else {
+                    explosionData = explosionData.filter(b => b !== boom);
+                    world.customLayerData(explosionData);
+                }
+            };
+            boomAnim();
+            document.body.classList.add('shake');
+            activeRings.push({ lat: centroid[1], lng: centroid[0], maxR: 25, speed: 6, repeat: 0, color: '#ee0000' });
+            world.ringsData(activeRings);
+        }
 
-        const boomAnim = () => {
-            boom.age += 0.02;
-            if (boom.age < 1) {
-                world.customLayerData(explosionData);
-                requestAnimationFrame(boomAnim);
-            } else {
-                explosionData = explosionData.filter(b => b !== boom);
-                world.customLayerData(explosionData);
-            }
-        };
-        boomAnim();
-
-        document.body.classList.add('shake');
-        activeRings.push({ lat: centroid[1], lng: centroid[0], maxR: 25, speed: 6, repeat: 0, color: '#ee0000' });
-        world.ringsData(activeRings);
         targetFeature.properties.gameStats.pop = Math.floor(targetFeature.properties.gameStats.pop * 0.1);
         targetFeature.properties.gameStats.mil = Math.floor(targetFeature.properties.gameStats.mil * 0.05);
-        logMsg(`Impact Confirmed: ${targetFeature.properties.ADMIN}`);
+        logMsg(`GRID IMPACT: ${targetFeature.properties.ADMIN}`);
         updateUI();
-        setTimeout(() => { activeRings = []; world.ringsData([]); document.body.classList.remove('shake'); }, 1000);
+        
+        setTimeout(() => { 
+            activeRings = []; world.ringsData([]); document.body.classList.remove('shake'); 
+        }, 1000);
     }, 1000);
 }
 
@@ -529,7 +560,9 @@ function gameTick() {
             target = playerTargets.length > 0 ? playerTargets[Math.floor(Math.random() * playerTargets.length)] : potentialTargets[Math.floor(Math.random() * potentialTargets.length)];
         } else { target = potentialTargets[Math.floor(Math.random() * potentialTargets.length)]; }
         const totalMil = myLands.reduce((sum, f) => sum + f.properties.gameStats.mil, 0);
-        if (totalMil > target.properties.gameStats.mil * 1.5 && target.properties.gameStats.mil < totalMil * 0.6) executeInvasion(emp, target);
+        if (totalMil > target.properties.gameStats.mil * 1.5 && target.properties.gameStats.mil < totalMil * 0.6) {
+            executeInvasion(emp, target, 'border');
+        }
     });
     updateUI(); updateLeaderboard();
     if (mapData.filter(f => f.properties.owner === player.empireName).length === 0) {
@@ -541,14 +574,14 @@ function gameTick() {
 
 async function pauseAndSaveGame() {
     isPaused = !isPaused;
-    const btn = document.getElementById('btn-pause-save');
+    const overlay = document.getElementById('pause-overlay');
     if (isPaused) {
-        btn.innerHTML = '<i class="fa-solid fa-play"></i> RESUME';
-        logMsg("Operational Pause");
+        if (overlay) overlay.style.display = 'flex';
+        logMsg("System Static");
         await saveCampaign();
     } else {
-        btn.innerHTML = '<i class="fa-solid fa-pause"></i> PAUSE & SAVE';
-        logMsg("Operational Resume");
+        if (overlay) overlay.style.display = 'none';
+        logMsg("System Active");
     }
 }
 

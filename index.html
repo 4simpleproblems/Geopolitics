@@ -19,12 +19,40 @@
 
     <div id="globe-container"></div>
 
-    <!-- Brand Name Top Right -->
     <div id="brand-header">GEOPOLITICS // GLOBAL COMMAND</div>
 
     <div id="saving-overlay">
         <div class="spinner"></div>
         <span>Syncing Database...</span>
+    </div>
+
+    <!-- Pause Menu Overlay -->
+    <div id="pause-overlay">
+        <div class="pause-content">
+            <h1>SYSTEM PAUSED</h1>
+            <div class="pause-options">
+                <button class="menu-btn" onclick="window.pauseAndSave()"><i class="fa-solid fa-play"></i> RESUME COMMAND</button>
+                <button class="menu-btn" onclick="window.showSettings()"><i class="fa-solid fa-gear"></i> VISUAL SETTINGS</button>
+                <button class="menu-btn" onclick="window.saveGame()"><i class="fa-solid fa-floppy-disk"></i> BACKUP STATE</button>
+                <button class="menu-btn danger" onclick="window.exitToMenu()"><i class="fa-solid fa-right-from-bracket"></i> ABANDON MISSION</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Overlay -->
+    <div id="settings-overlay">
+        <div class="settings-card">
+            <h2>VISUAL SETTINGS</h2>
+            <div class="setting-group">
+                <label>Resolution / Fidelity</label>
+                <div class="toggle-group">
+                    <button id="res-high" class="toggle-btn active" onclick="window.setResolution('high')">HIGH</button>
+                    <button id="res-low" class="toggle-btn" onclick="window.setResolution('low')">LOW</button>
+                </div>
+                <p class="setting-desc">Low resolution disables tactical arcs (planes/nukes) and 3D kinetic impact effects.</p>
+            </div>
+            <button class="menu-btn" onclick="window.hideSettings()">APPLY & BACK</button>
+        </div>
     </div>
 
     <div class="overlay">
@@ -52,35 +80,33 @@
             <div style="font-size: 0.7rem; color: #888; margin-left: 10px;">Shift+Drag to move nodes</div>
         </div>
 
-        <!-- In-Game Controls -->
+        <!-- Large Pause Button -->
         <div id="controls" style="display: none;">
-            <button class="btn-action" id="btn-pause-save" onclick="window.pauseAndSave()"><i class="fa-solid fa-pause"></i> Pause & Save</button>
-            <button class="btn-action danger" onclick="window.exitToMenu()"><i class="fa-solid fa-right-from-bracket"></i> Exit</button>
+            <button id="btn-pause-square" onclick="window.pauseAndSave()">
+                <i class="fa-solid fa-pause"></i>
+            </button>
         </div>
 
         <div id="combat-log">Ready</div>
     </div>
 
-    <!-- Context Menu -->
     <div id="ctx-menu">
         <div class="ctx-item" onclick="handleAction('invade')"><i class="fa-solid fa-crosshairs"></i> Takeover</div>
         <div class="ctx-item" onclick="handleAction('nuke')" style="color:var(--geist-error)"><i class="fa-solid fa-radiation"></i> Strategic Strike</div>
     </div>
 
-    <!-- Setup Screen Overhaul -->
     <div id="setup-screen">
         <div class="setup-layout">
-            <!-- Left Side: Educational Content -->
             <div class="setup-info">
                 <div class="info-content">
                     <h1>A Laboratory for Global Strategy</h1>
-                    <p class="mission">Geopolitics is a real-time educational simulation designed to explore the complexities of territorial acquisition, international relations, and resource management. This is more than a game; it is a sandbox for understanding how borders shift through military parity and strategic positioning.</p>
+                    <p class="mission">Geopolitics is a real-time educational simulation designed to explore the complexities of territorial acquisition, international relations, and resource management.</p>
                     
                     <div class="feature-grid">
                         <div class="f-item">
-                            <i class="fa-solid fa-microchip"></i>
-                            <h3>Territorial AI</h3>
-                            <p>Real-time neighboring logic based on military relative strength.</p>
+                            <i class="fa-solid fa-plane-up"></i>
+                            <h3>Air Mobility</h3>
+                            <p>Launch invasions from across oceans using plane-based tactical arcs.</p>
                         </div>
                         <div class="f-item">
                             <i class="fa-solid fa-database"></i>
@@ -95,20 +121,19 @@
                         <div class="f-item">
                             <i class="fa-solid fa-user-graduate"></i>
                             <h3>Educational Sandbox</h3>
-                            <p>Designed to visualize the impact of geopolitical decisions on a global scale.</p>
+                            <p>Visualizing the impact of geopolitical decisions on a global scale.</p>
                         </div>
                     </div>
 
                     <div class="recent-deployments">
                         <h2>Recent Operational States</h2>
                         <div id="saves-list" class="save-list">
-                            <div style="color: #444; font-size: 0.8rem;">No backup states found.</div>
+                            <div style="color: #444; font-size: 0.8rem;">No operational backups detected.</div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Right Side: Command Interface + Globe Preview -->
             <div class="setup-command">
                 <div class="command-card">
                     <div class="input-group">

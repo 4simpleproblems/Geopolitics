@@ -60,7 +60,57 @@ body { background: var(--bg); color: var(--geist-foreground); overflow: hidden; 
 .lb-val { font-family: monospace; font-weight: 600; text-align: right; }
 .lb-sub { font-size: 0.6rem; color: var(--accents-5); text-transform: uppercase; margin-left: 2px; }
 
-/* Setup Screen Overhaul */
+/* Large Pause Button - Bottom Right */
+#btn-pause-square {
+    position: fixed; bottom: 2rem; right: 2rem;
+    width: 64px; height: 64px;
+    background: #fff; color: #000; border: none;
+    border-radius: 8px; font-size: 1.5rem;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    transition: transform 0.2s, background 0.2s;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+}
+#btn-pause-square:hover { transform: scale(1.05); background: #eee; }
+
+/* Overlays */
+#pause-overlay, #settings-overlay {
+    position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+    background: rgba(0,0,0,0.85); backdrop-filter: blur(10px);
+    display: none; align-items: center; justify-content: center;
+    z-index: 2000;
+}
+
+.pause-content, .settings-card {
+    width: 400px; text-align: center;
+}
+.pause-content h1, .settings-card h2 {
+    font-size: 2rem; font-weight: 800; letter-spacing: -0.05em; margin-bottom: 2rem;
+}
+
+.pause-options, .setting-group {
+    display: flex; flex-direction: column; gap: 12px;
+}
+
+.menu-btn {
+    width: 100%; background: #000; border: 1px solid var(--accents-2);
+    color: #fff; padding: 16px; border-radius: 8px;
+    font-weight: 600; font-size: 0.9rem; cursor: pointer;
+    transition: 0.2s; display: flex; align-items: center; justify-content: center; gap: 10px;
+}
+.menu-btn:hover { border-color: #fff; background: #fff; color: #000; }
+.menu-btn.danger:hover { border-color: var(--geist-error); background: var(--geist-error); color: #fff; }
+
+.toggle-group {
+    display: flex; border: 1px solid var(--accents-2); border-radius: 8px; overflow: hidden; margin: 10px 0;
+}
+.toggle-btn {
+    flex: 1; background: #000; color: var(--accents-5); border: none; padding: 12px;
+    font-weight: 700; font-size: 0.8rem; cursor: pointer; transition: 0.2s;
+}
+.toggle-btn.active { background: #fff; color: #000; }
+.setting-desc { font-size: 0.75rem; color: var(--accents-5); line-height: 1.5; margin-bottom: 2rem; }
+
+/* ... Setup Layout rest ... */
 #setup-screen { 
     position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; 
     background: #000; z-index: 1000; overflow: hidden;
@@ -130,23 +180,11 @@ body { background: var(--bg); color: var(--geist-foreground); overflow: hidden; 
 }
 .btn-deploy:hover { opacity: 0.9; }
 
-/* In-Game UI Rest */
-#controls { position: fixed; bottom: 2rem; right: 2rem; display: flex; gap: 12px; }
-.btn-action {
-    background: rgba(0,0,0,0.8); border: 1px solid var(--accents-2);
-    color: #fff; padding: 10px 20px; border-radius: 8px;
-    font-size: 0.75rem; font-weight: 600; cursor: pointer;
-    backdrop-filter: blur(10px); transition: 0.2s;
-    display: flex; align-items: center; gap: 8px;
-}
-.btn-action:hover { border-color: #fff; background: #fff; color: #000; }
-.btn-action.danger:hover { border-color: var(--geist-error); background: var(--geist-error); color: #fff; }
-
 #saving-overlay {
     position: fixed; top: 2rem; left: 50%; transform: translateX(-50%);
     background: #fff; color: #000; padding: 8px 16px; border-radius: 20px;
     font-size: 0.7rem; font-weight: 700; display: none; align-items: center; gap: 8px;
-    z-index: 200; box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+    z-index: 3000; box-shadow: 0 5px 15px rgba(0,0,0,0.3);
 }
 .spinner {
     width: 12px; height: 12px; border: 2px solid rgba(0,0,0,0.1); border-top-color: #000;
