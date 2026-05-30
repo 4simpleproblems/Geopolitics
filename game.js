@@ -2,12 +2,10 @@
  * Geopolitics - Main Engine
  */
 
-import Globe from 'globe.gl';
-import * as THREE from 'three';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { formatNum, getFuzzy, getCentroid, snapToCoast } from './utils.js';
+
+const Globe = window.Globe || window.GlobeGl;
+const THREE = window.THREE;
 
 let sunGroup;
 let sunLight;
@@ -15,7 +13,6 @@ let starField;
 let jupiterGroup;
 let saturnGroup;
 let marsGroup;
-let bloomPass;
 
 let world;
 let mapData = [];
@@ -348,29 +345,6 @@ function setupWorld() {
     world.scene().add(createOrbit(600));
     world.scene().add(createOrbit(1000));
     world.scene().add(createOrbit(1300));
-
-    const composer = world.postProcessingComposer();
-    const scene = world.scene();
-    const camera = world.camera();
-    composer.passes = [];
-    composer.addPass(new RenderPass(scene, camera));
-
-    bloomPass = new UnrealBloomPass(
-        new THREE.Vector2(window.innerWidth, window.innerHeight),
-        0.8,
-        0.4,
-        0.25
-    );
-    composer.addPass(bloomPass);
-
-    window.addEventListener('resize', () => {
-        if (world && bloomPass) {
-            const width = window.innerWidth;
-            const height = window.innerHeight;
-            composer.setSize(width, height);
-            bloomPass.setSize(width, height);
-        }
-    });
 
     animate();
 }
