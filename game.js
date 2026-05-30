@@ -20,15 +20,21 @@ let aiInterval = null;
 let activeArcs = [];
 let activeRings = [];
 let explosionData = []; 
-let invasionProgress = {}; 
+let invasionProgress = {}; // Keyed by country name, contains array of {attacker, val, startTime}
 let resolution = localStorage.getItem('geo_res') || 'high';
+let currentGameId = null;
 
 // IndexedDB Setup
-const DB_NAME = 'GeoDB';
-const STORE_NAME = 'saves';
+const DB_NAME = 'GeoDB_v2';
+const STORE_NAME = 'games';
 const dbPromise = new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, 1);
-    request.onupgradeneeded = () => request.result.createObjectStore(STORE_NAME, { keyPath: 'id' });
+    const request = indexedDB.open(DB_NAME, 2);
+    request.onupgradeneeded = (e) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+            db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+        }
+    };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
 });
@@ -75,6 +81,8 @@ window.setResolution = (res) => {
     document.getElementById('res-high').classList.toggle('active', res === 'high');
     document.getElementById('res-low').classList.toggle('active', res === 'low');
     if (res === 'low') {
+        activeArcs = [];
+        explosionData = [];
         world.arcsData([]);
         world.customLayerData([]);
     } else {
@@ -82,7 +90,12 @@ window.setResolution = (res) => {
         world.customLayerData(explosionData);
     }
 };
-window.deploymentPending = false;
+// Management Globals
+window.deleteGame = deleteGame;
+window.renameGame = renameGame;
+window.exportAllSaves = exportSaves;
+window.triggerImport = () => document.getElementById('import-file').click();
+window.importSave = importSave;
 
 // Initialize
 async function init() {
@@ -103,7 +116,7 @@ async function init() {
         setupNeighborhoods();
         setupWorld();
         setupUIEvents();
-        loadSavesFromDB();
+        loadGamesFromDB();
         
         window.deploymentPending = true;
         window.setResolution(resolution);
@@ -125,8 +138,7 @@ function setupNeighborhoods() {
             if (c1 === c2) return;
             const cent2 = getCentroid(c2);
             const dist = Math.sqrt(Math.pow(cent1[0] - cent2[0], 2) + Math.pow(cent1[1] - cent2[1], 2));
-            // INCREASED THRESHOLD: USA & Canada fix (approx distance between centroids is large)
-            // Using a permissive 80 threshold to catch giant neighbors
+            // USA/Canada centroid distance is approx 60-70. Using 80.
             if (dist < 80) c1.properties.neighbors.push(c2.properties.ADMIN);
         });
     });
@@ -143,10 +155,13 @@ function setupWorld() {
         .polygonsData(mapData)
         .polygonCapColor(d => {
             const ownerColor = getOwnerColor(d.properties.owner);
-            const prog = invasionProgress[d.properties.ADMIN];
-            if (prog && prog.active) {
-                const targetColor = getOwnerColor(prog.attacker);
-                return `rgba(${hexToRgb(targetColor)}, ${prog.val})`;
+            const progs = invasionProgress[d.properties.ADMIN];
+            
+            if (progs && progs.length > 0) {
+                // Visualize most advanced progress or blend
+                const primary = progs.sort((a,b) => b.val - a.val)[0];
+                const targetColor = getOwnerColor(primary.attacker);
+                return `rgba(${hexToRgb(targetColor)}, ${primary.val})`;
             }
             if (hoverCountry === d) return ownerColor + 'cc';
             return ownerColor;
@@ -282,6 +297,7 @@ function startDeployment() {
     player.empireName = startNode.properties.ADMIN;
     isPaused = false;
     hasUnsavedChanges = false;
+    currentGameId = Date.now(); // New Game ID
     
     const elements = ['setup-screen', 'status-bar', 'leaderboard', 'controls'];
     elements.forEach(id => {
@@ -303,7 +319,7 @@ function startDeployment() {
 
     updateUI();
     updateLeaderboard();
-    logMsg(`System Online: ${startNode.properties.ADMIN}`);
+    logMsg(`Deployment successful: ${startNode.properties.ADMIN}`);
 
     if (activeMode !== 'builder') {
         if (aiInterval) clearInterval(aiInterval);
@@ -393,8 +409,6 @@ function handlePolygonClick(d, e) {
     if (d.properties.owner === player.empireName) return;
     const playerLands = mapData.filter(f => f.properties.owner === player.empireName);
     const isBordering = playerLands.some(land => land.properties.neighbors.includes(d.properties.ADMIN));
-    
-    // AIR INVASION (Across countries): Use White Arc
     const type = isBordering ? 'border' : 'air';
     executeInvasion(player.empireName, d, type);
     hasUnsavedChanges = true;
@@ -423,14 +437,19 @@ function executeAction(type) {
 
 function executeInvasion(attackerName, targetFeature, type = 'border') {
     const targetName = targetFeature.properties.ADMIN;
-    if (invasionProgress[targetName] && invasionProgress[targetName].active) return;
+    
+    // MULTI-FRONT ATTACK: Initialize array if needed
+    if (!invasionProgress[targetName]) invasionProgress[targetName] = [];
+    
+    // Check if this attacker is already attacking this target
+    if (invasionProgress[targetName].some(p => p.attacker === attackerName)) return;
+
     const attackerLands = mapData.filter(f => f.properties.owner === attackerName);
     if (attackerLands.length === 0) return;
 
     let attMil = attackerLands.reduce((sum, f) => sum + f.properties.gameStats.mil, 0);
     let defMil = targetFeature.properties.gameStats.mil;
     
-    // Air invasions are costlier/riskier
     const threshold = type === 'air' ? 4.0 : 2.5;
     if (defMil > attMil * threshold) {
         if (attackerName === player.empireName) logMsg(`${type.toUpperCase()} ASSAULT IMPOSSIBLE: ${targetName}`);
@@ -452,33 +471,39 @@ function executeInvasion(attackerName, targetFeature, type = 'border') {
         world.arcsData(activeArcs);
     }
 
-    invasionProgress[targetName] = { active: true, val: 0, attacker: attackerName, startTime: Date.now() };
+    const progState = { active: true, val: 0, attacker: attackerName, startTime: Date.now() };
+    invasionProgress[targetName].push(progState);
+    
     const duration = (type === 'air' ? 4000 : 2000) + (defMil / 50000) * 1000;
     
     const anim = () => {
         if (isPaused) { 
-            invasionProgress[targetName].startTime += 16; 
+            progState.startTime += 16; 
             requestAnimationFrame(anim); return; 
         }
-        const elapsed = Date.now() - invasionProgress[targetName].startTime;
+        const elapsed = Date.now() - progState.startTime;
         const prog = Math.min(1, elapsed / duration);
-        invasionProgress[targetName].val = prog;
+        progState.val = prog;
         
         if (world) world.polygonCapColor(world.polygonCapColor());
         if (prog < 1) requestAnimationFrame(anim);
         else {
+            // Resolution
             activeArcs = activeArcs.filter(a => a !== arc);
             world.arcsData(activeArcs);
-            invasionProgress[targetName].active = false;
+            invasionProgress[targetName] = invasionProgress[targetName].filter(p => p !== progState);
             
+            // Check if still attacking (target owner might have changed)
+            if (targetFeature.properties.owner === attackerName) return;
+
             if (attMil > defMil * 1.05) {
                 targetFeature.properties.owner = attackerName;
                 targetFeature.properties.gameStats.mil = Math.floor(attMil * 0.05);
                 attackerLands.forEach(f => f.properties.gameStats.mil = Math.floor(f.properties.gameStats.mil * 0.9));
-                if (attackerName === player.empireName) logMsg(`${type.toUpperCase()} SUCCESS: ${targetName}`);
+                if (attackerName === player.empireName) logMsg(`Annexation Complete: ${targetName}`);
             } else {
                 attackerLands.forEach(f => f.properties.gameStats.mil = Math.floor(f.properties.gameStats.mil * 0.5));
-                if (attackerName === player.empireName) logMsg(`${type.toUpperCase()} FAILURE: ${targetName}`);
+                if (attackerName === player.empireName) logMsg(`Offensive Repelled: ${targetName}`);
             }
             updateUI(); updateLeaderboard();
         }
@@ -495,7 +520,7 @@ function launchStrike(attackerName, targetFeature) {
     const arc = {
         startLat: startCentroid[1], startLng: startCentroid[0],
         endLat: centroid[1], endLng: centroid[0],
-        color: ['#ffff00', '#ee0000'] // YELLOW ARCS FOR BOMBS
+        color: ['#ffff00', '#ee0000'] 
     };
     
     if (resolution === 'high') {
@@ -529,7 +554,7 @@ function launchStrike(attackerName, targetFeature) {
 
         targetFeature.properties.gameStats.pop = Math.floor(targetFeature.properties.gameStats.pop * 0.1);
         targetFeature.properties.gameStats.mil = Math.floor(targetFeature.properties.gameStats.mil * 0.05);
-        logMsg(`GRID IMPACT: ${targetFeature.properties.ADMIN}`);
+        logMsg(`Impact Confirmed: ${targetFeature.properties.ADMIN}`);
         updateUI();
         
         setTimeout(() => { 
@@ -589,13 +614,15 @@ async function saveCampaign() {
     const overlay = document.getElementById('saving-overlay');
     if (overlay) overlay.style.display = 'flex';
     const db = await dbPromise;
+    
     const saveObj = {
-        id: Date.now(),
+        id: currentGameId, // Overwrite same game
         date: new Date().toLocaleString(),
         mode: activeMode,
         empire: player.empireName,
         mapState: mapData.map(f => ({ admin: f.properties.ADMIN, owner: f.properties.owner, stats: f.properties.gameStats }))
     };
+    
     return new Promise(resolve => {
         const tx = db.transaction(STORE_NAME, 'readwrite');
         tx.objectStore(STORE_NAME).put(saveObj);
@@ -604,32 +631,100 @@ async function saveCampaign() {
                 if (overlay) overlay.style.display = 'none';
                 logMsg("Backup Synced");
                 hasUnsavedChanges = false;
-                loadSavesFromDB();
+                loadGamesFromDB();
                 resolve();
             }, 800);
         };
     });
 }
 
-async function loadSavesFromDB() {
+async function loadGamesFromDB() {
     const db = await dbPromise;
     const savesList = document.getElementById('saves-list');
     if (!savesList) return;
     const tx = db.transaction(STORE_NAME, 'readonly');
     const request = tx.objectStore(STORE_NAME).getAll();
     request.onsuccess = () => {
-        const saves = request.result.reverse().slice(0, 5);
+        const saves = request.result.reverse();
         if (saves.length === 0) {
             savesList.innerHTML = '<div style="color: #444; font-size: 0.8rem;">No operational backups detected.</div>';
             return;
         }
         savesList.innerHTML = saves.map(s => `
-            <div class="save-item" onclick="window.restoreFromDB(${s.id})">
-                <div class="title">${s.empire.toUpperCase()}</div>
-                <div class="meta">${s.mode.toUpperCase()} • ${s.date}</div>
+            <div class="save-item">
+                <div class="save-info" onclick="window.restoreFromDB(${s.id})">
+                    <div class="title">${s.empire.toUpperCase()}</div>
+                    <div class="meta">${s.mode.toUpperCase()} • ${s.date}</div>
+                </div>
+                <div class="save-controls">
+                    <button class="tiny-btn" onclick="window.renameGame(${s.id}, event)"><i class="fa-solid fa-pen"></i></button>
+                    <button class="tiny-btn" style="color:var(--geist-error)" onclick="window.deleteGame(${s.id}, event)"><i class="fa-solid fa-trash"></i></button>
+                </div>
             </div>
         `).join('');
     };
+}
+
+async function deleteGame(id, e) {
+    if (e) e.stopPropagation();
+    if (!confirm("Permanently purge this campaign backup?")) return;
+    const db = await dbPromise;
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).delete(id);
+    tx.oncomplete = () => {
+        logMsg("Sector Purged");
+        loadGamesFromDB();
+    };
+}
+
+async function renameGame(id, e) {
+    if (e) e.stopPropagation();
+    const newName = prompt("New Empire Designation:");
+    if (!newName) return;
+    const db = await dbPromise;
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    const req = store.get(id);
+    req.onsuccess = () => {
+        const data = req.result;
+        data.empire = newName;
+        store.put(data);
+        loadGamesFromDB();
+    };
+}
+
+async function exportSaves() {
+    const db = await dbPromise;
+    const tx = db.transaction(STORE_NAME, 'readonly');
+    const request = tx.objectStore(STORE_NAME).getAll();
+    request.onsuccess = () => {
+        const blob = new Blob([JSON.stringify(request.result)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `geopolitics_backups_${Date.now()}.json`;
+        a.click();
+    };
+}
+
+function importSave(input) {
+    const file = input.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+        try {
+            const data = JSON.parse(e.target.result);
+            const db = await dbPromise;
+            const tx = db.transaction(STORE_NAME, 'readwrite');
+            const store = tx.objectStore(STORE_NAME);
+            data.forEach(game => store.put(data.length ? game : data)); // Handle single or array
+            tx.oncomplete = () => {
+                logMsg("External Grid Linked");
+                loadGamesFromDB();
+            };
+        } catch (err) { alert("Invalid Command Data File"); }
+    };
+    reader.readAsText(file);
 }
 
 window.restoreFromDB = async (id) => {
@@ -641,6 +736,7 @@ window.restoreFromDB = async (id) => {
         if (!save) return;
         activeMode = save.mode;
         player.empireName = save.empire;
+        currentGameId = save.id;
         mapData.forEach(f => {
             const savedNode = save.mapState.find(n => n.admin === f.properties.ADMIN);
             if (savedNode) { f.properties.owner = savedNode.owner; f.properties.gameStats = savedNode.stats; }

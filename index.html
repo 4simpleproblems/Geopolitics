@@ -23,7 +23,7 @@
 
     <div id="saving-overlay">
         <div class="spinner"></div>
-        <span>Syncing Database...</span>
+        <span>Syncing Command Grid...</span>
     </div>
 
     <!-- Pause Menu Overlay -->
@@ -33,7 +33,7 @@
             <div class="pause-options">
                 <button class="menu-btn" onclick="window.pauseAndSave()"><i class="fa-solid fa-play"></i> RESUME COMMAND</button>
                 <button class="menu-btn" onclick="window.showSettings()"><i class="fa-solid fa-gear"></i> VISUAL SETTINGS</button>
-                <button class="menu-btn" onclick="window.saveGame()"><i class="fa-solid fa-floppy-disk"></i> BACKUP STATE</button>
+                <button class="menu-btn" onclick="window.saveGame()"><i class="fa-solid fa-floppy-disk"></i> OVERWRITE GAME</button>
                 <button class="menu-btn danger" onclick="window.exitToMenu()"><i class="fa-solid fa-right-from-bracket"></i> ABANDON MISSION</button>
             </div>
         </div>
@@ -109,24 +109,31 @@
                             <p>Launch invasions from across oceans using plane-based tactical arcs.</p>
                         </div>
                         <div class="f-item">
-                            <i class="fa-solid fa-database"></i>
-                            <h3>Global Datasets</h3>
-                            <p>Utilizing high-resolution GeoJSON for real-world accuracy.</p>
+                            <i class="fa-solid fa-burst"></i>
+                            <h3>3D Kinetic Combat</h3>
+                            <p>Advanced Three.js rendering for high-stakes tactical impacts.</p>
                         </div>
                         <div class="f-item">
                             <i class="fa-solid fa-shield-halved"></i>
                             <h3>Defensive Parity</h3>
-                            <p>Simulating the cost of war through progressive annexation.</p>
+                            <p>Simulating the cost of war through multi-nation annexation.</p>
                         </div>
                         <div class="f-item">
-                            <i class="fa-solid fa-user-graduate"></i>
-                            <h3>Educational Sandbox</h3>
-                            <p>Visualizing the impact of geopolitical decisions on a global scale.</p>
+                            <i class="fa-solid fa-server"></i>
+                            <h3>Command Data</h3>
+                            <p>Robust IndexedDB persistence for long-term global campaigns.</p>
                         </div>
                     </div>
 
                     <div class="recent-deployments">
-                        <h2>Recent Operational States</h2>
+                        <div class="saves-header">
+                            <h2>OPERATIONAL BACKUPS</h2>
+                            <div class="saves-actions">
+                                <button class="tiny-btn" onclick="window.exportAllSaves()" title="Export All Games"><i class="fa-solid fa-file-export"></i></button>
+                                <button class="tiny-btn" onclick="window.triggerImport()" title="Import Game"><i class="fa-solid fa-file-import"></i></button>
+                                <input type="file" id="import-file" style="display:none" onchange="window.importSave(this)">
+                            </div>
+                        </div>
                         <div id="saves-list" class="save-list">
                             <div style="color: #444; font-size: 0.8rem;">No operational backups detected.</div>
                         </div>
