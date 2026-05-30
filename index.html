@@ -21,6 +21,27 @@
 
     <div id="brand-header">GEOPOLITICS // GLOBAL COMMAND</div>
 
+    <!-- Builder Sidebar -->
+    <div id="builder-sidebar" style="display: none;">
+        <div class="sidebar-header">
+            <h3>COMMAND ATLAS</h3>
+            <p>Select a nation or use custom vectors.</p>
+        </div>
+        <div class="sidebar-search">
+            <input type="text" id="sidebar-country-search" placeholder="Filter nations..." autocomplete="off">
+        </div>
+        <div id="sidebar-nation-list" class="nation-scroll"></div>
+        
+        <div class="sidebar-footer">
+            <button class="menu-btn" onclick="window.togglePenTool()"><i class="fa-solid fa-pen-nib"></i> PEN TOOL</button>
+            <div id="pen-controls" style="display:none; margin-top:10px;">
+                <button class="tiny-btn" onclick="window.autoCoastFix()"><i class="fa-solid fa-wand-magic-sparkles"></i> AUTO-COAST FIX</button>
+                <button class="tiny-btn" onclick="window.finalizeCustom()"><i class="fa-solid fa-check"></i> FINALIZE</button>
+                <button class="tiny-btn danger" onclick="window.clearPen()"><i class="fa-solid fa-trash"></i> CLEAR</button>
+            </div>
+        </div>
+    </div>
+
     <div id="saving-overlay">
         <div class="spinner"></div>
         <span>Syncing Command Grid...</span>
@@ -71,13 +92,6 @@
                 <span>Status</span>
             </div>
             <div id="lb-list"></div>
-        </div>
-
-        <!-- Builder Tool Overlay -->
-        <div id="builder-overlay" style="display: none;">
-            <button id="btn-draw" class="builder-btn"><i class="fa-solid fa-pen-nib"></i> Edit Mode</button>
-            <button id="btn-save-build" class="builder-btn"><i class="fa-solid fa-check"></i> Finalize</button>
-            <div style="font-size: 0.7rem; color: #888; margin-left: 10px;">Shift+Drag to move nodes</div>
         </div>
 
         <!-- Large Pause Button -->
