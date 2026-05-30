@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GEOPOLITICS // GLOBAL CONTROL</title>
+    <title>GEOPOLITICS</title>
     
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Manrope:wght@400;600;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
     <script src="https://unpkg.com/globe.gl"></script>
@@ -21,35 +21,35 @@
     <div class="overlay">
         <!-- Status Bar -->
         <div id="status-bar" style="display: none;">
-            <div class="status-item">Empire <span class="status-val" id="val-empire">N/A</span></div>
+            <div class="status-item"><i class="fa-solid fa-crown"></i> <span class="status-val" id="val-empire">N/A</span></div>
             <div class="status-item">Sectors <span class="status-val" id="val-terr">0</span></div>
-            <div class="status-item">Military <span class="status-val" id="val-mil">0</span></div>
-            <div class="status-item">Mode <span class="status-val" id="val-mode" style="color:var(--accent)">TAKEOVER</span></div>
+            <div class="status-item">Mil <span class="status-val" id="val-mil">0</span></div>
         </div>
 
         <!-- Leaderboard -->
         <div id="leaderboard" style="display: none;">
-            <div class="lb-title"><i class="fa-solid fa-trophy"></i> GLOBAL RANKINGS</div>
+            <div class="lb-title"><i class="fa-solid fa-chart-line"></i> Global Control</div>
             <div class="lb-header">
-                <span>EMPIRE</span>
-                <span>SECTORS / MIL</span>
+                <span>Nation</span>
+                <span>Sectors / Mil</span>
             </div>
             <div id="lb-list"></div>
         </div>
 
-        <div id="combat-log">System Standby</div>
-
-        <!-- Controls -->
-        <div id="controls" style="display: none;">
-            <button id="btn-draw" class="btn" style="display: none;"><i class="fa-solid fa-pen-nib"></i> Build Tool</button>
-            <button id="btn-save" class="btn" onclick="window.saveGame()"><i class="fa-solid fa-floppy-disk"></i> Save Game</button>
+        <!-- Builder Tool Overlay -->
+        <div id="builder-overlay">
+            <button id="btn-draw" class="builder-btn"><i class="fa-solid fa-pen-nib"></i> Edit Mode</button>
+            <button id="btn-save-build" class="builder-btn"><i class="fa-solid fa-check"></i> Finalize</button>
+            <div style="font-size: 0.7rem; color: #888; margin-left: 10px;">Shift+Drag to move nodes</div>
         </div>
+
+        <div id="combat-log">Ready</div>
     </div>
 
     <!-- Context Menu -->
     <div id="ctx-menu">
-        <div class="ctx-item" onclick="handleAction('invade')"><i class="fa-solid fa-crosshairs"></i> Takeover Sector</div>
-        <div class="ctx-item" onclick="handleAction('nuke')" style="color:var(--danger)"><i class="fa-solid fa-radiation"></i> Launch Nuke</div>
+        <div class="ctx-item" onclick="handleAction('invade')"><i class="fa-solid fa-crosshairs"></i> Takeover</div>
+        <div class="ctx-item" onclick="handleAction('nuke')" style="color:var(--geist-error)"><i class="fa-solid fa-radiation"></i> Nuke</div>
     </div>
 
     <!-- Setup Screen -->
@@ -57,41 +57,38 @@
         <div class="setup-container">
             <div class="setup-left">
                 <h1>GEOPOLITICS</h1>
-                <p>Select your starting nation and game mode.</p>
+                <p>Global territorial simulation engine.</p>
                 
                 <div class="input-group">
-                    <label>Country Search</label>
-                    <input type="text" id="start-country" placeholder="Type a country name..." autocomplete="off">
+                    <label>Starting Point</label>
+                    <input type="text" id="start-country" placeholder="Search nations..." autocomplete="off">
                     <div id="search-results"></div>
                 </div>
 
-                <div class="mode-section">
-                    <label>Game Mode</label>
-                    <div class="modes">
-                        <div class="mode-btn active" data-mode="takeover">
-                            <strong>Takeover (Default)</strong>
-                            <span>Territorial AI warfare. Conquer the globe.</span>
+                <div class="input-group">
+                    <label>Operation Mode</label>
+                    <div class="modes-grid">
+                        <div class="mode-card active" data-mode="takeover">
+                            <strong>Takeover</strong>
+                            <span>Standard tactical expansion.</span>
                         </div>
-                        <div class="mode-btn" data-mode="survival">
+                        <div class="mode-card" data-mode="survival">
                             <strong>Survival</strong>
-                            <span>Hostile grid. All nations target your empire.</span>
+                            <span>Survive the global onslaught.</span>
                         </div>
-                        <div class="mode-btn" data-mode="builder">
+                        <div class="mode-card" data-mode="builder">
                             <strong>Builder</strong>
-                            <span>Peaceful mode. Draw vectors and reshape coasts.</span>
+                            <span>Peaceful vector construction.</span>
                         </div>
                     </div>
                 </div>
 
-                <button class="btn-deploy" onclick="initializeGame()">ENTER THE GRID</button>
+                <button class="btn-deploy" onclick="initializeGame()">Deploy System</button>
             </div>
             <div class="setup-right">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
-                    <h2>Saved Campaigns</h2>
-                    <i class="fa-solid fa-server" style="color:var(--text-muted)"></i>
-                </div>
+                <h2>Recent Deployments</h2>
                 <div id="saves-list">
-                    <div class="no-saves">No active campaigns found.</div>
+                    <div style="color: #666; font-size: 0.8rem;">No backup states found.</div>
                 </div>
             </div>
         </div>
