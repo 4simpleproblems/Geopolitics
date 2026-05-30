@@ -192,8 +192,8 @@ function setupWorld() {
         .bumpImageUrl('https://unpkg.com/three-globe/example/img/earth-topology.png')
         .backgroundColor('#000000')
         .showAtmosphere(true)
-        .atmosphereColor('#0070f3')
-        .atmosphereAltitude(0.15)
+        .atmosphereColor('#ffffff')
+        .atmosphereAltitude(0.12)
         .polygonsData(mapData)
         .polygonCapColor(d => {
             const ownerColor = getOwnerColor(d.properties.owner);
@@ -235,25 +235,7 @@ function setupWorld() {
     world.controls().autoRotateSpeed = 0.3;
     world.pointOfView({ lat: 20, lng: 0, altitude: 2.5 });
 
-    const globeMat = world.globeMaterial();
-    if (globeMat) {
-        globeMat.bumpScale = 15;
-        if (globeMat.specular) globeMat.specular.setHex(0x333333);
-        if (globeMat.shininess !== undefined) globeMat.shininess = 25;
-    }
-
-    const lightsToRemove = [];
-    world.scene().traverse(child => {
-        if (child.isLight) {
-            lightsToRemove.push(child);
-        }
-    });
-    lightsToRemove.forEach(light => world.scene().remove(light));
-
-    const ambientLight = new THREE.AmbientLight(0x223355, 0.4);
-    world.scene().add(ambientLight);
-
-    sunLight = new THREE.DirectionalLight(0xfff5ea, 1.8);
+    sunLight = new THREE.DirectionalLight(0xfff5ea, 1.2);
     world.scene().add(sunLight);
 
     const starGeo = new THREE.BufferGeometry();
