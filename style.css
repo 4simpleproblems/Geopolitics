@@ -41,8 +41,17 @@ body { background: var(--bg); color: var(--geist-foreground); overflow: hidden; 
 .lb-title { font-weight: 700; font-size: 0.85rem; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; color: #fff; }
 .lb-header { display: flex; justify-content: space-between; font-size: 0.65rem; color: var(--accents-5); margin-bottom: 8px; border-bottom: 1px solid var(--accents-2); padding-bottom: 8px; }
 #lb-list { display: flex; flex-direction: column; gap: 4px; }
-.lb-item { display: flex; justify-content: space-between; font-size: 0.75rem; padding: 4px 0; }
-.lb-item.player { color: var(--geist-success); font-weight: 700; }
+.lb-item { 
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 0.7rem; padding: 10px 12px; 
+    border-radius: 6px; cursor: pointer; transition: 0.2s;
+    background: rgba(255,255,255,0.03); margin-bottom: 4px;
+}
+.lb-item:hover { background: rgba(255,255,255,0.08); }
+.lb-item.player { background: rgba(0, 112, 243, 0.1); border: 1px solid var(--geist-success); color: #fff; }
+.lb-name { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100px; }
+.lb-val { font-family: monospace; font-weight: 600; text-align: right; }
+.lb-sub { font-size: 0.55rem; color: var(--accents-5); text-transform: uppercase; margin-left: 2px; }
 
 /* Setup Screen - Vercel Overhaul */
 #setup-screen { 

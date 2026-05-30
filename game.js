@@ -17,25 +17,32 @@ let isDrawing = false;
 let aiInterval = null;
 let activeArcs = [];
 let activeRings = [];
+let invasionProgress = {}; // Store progress for each country [0-1]
 
-// Hardcoded vivid colors based on MAPCOLOR7
+// Colors
+const PLAYER_COLOR = '#0070f3'; // Vercel Blue
 const COLORS = {
-    1: '#ff4d4d', // Red
-    2: '#0070f3', // Vercel Blue
-    3: '#00dfd8', // Cyan
-    4: '#ffca28', // Amber
-    5: '#7928ca', // Purple
-    6: '#ff0080', // Pink
-    7: '#50e3c2'  // Teal
+    1: '#ff4d4d',
+    2: '#7928ca', // Swapped out blue for purple to keep player unique
+    3: '#00dfd8',
+    4: '#ffca28',
+    5: '#9b59b6',
+    6: '#ff0080',
+    7: '#50e3c2'
 };
 
 function getCountryColor(feature) {
     if (!feature || !feature.properties) return '#fff';
+    if (feature.properties.owner === player.empireName) return PLAYER_COLOR;
     const mc = feature.properties.MAPCOLOR7;
-    return COLORS[mc] || `hsl(${Math.abs(feature.properties.ADMIN.charCodeAt(0) * 20) % 360}, 70%, 50%)`;
+    let color = COLORS[mc] || `hsl(${Math.abs(feature.properties.ADMIN.charCodeAt(0) * 20) % 360}, 70%, 50%)`;
+    // Ensure AI doesn't use player color
+    if (color === PLAYER_COLOR) color = '#f5a623'; 
+    return color;
 }
 
 function getOwnerColor(ownerName) {
+    if (ownerName === player.empireName) return PLAYER_COLOR;
     const ownerNode = mapData.find(f => f.properties.ADMIN === ownerName);
     return ownerNode ? getCountryColor(ownerNode) : '#fff';
 }
@@ -49,6 +56,7 @@ window.initializeGame = () => {
 };
 window.handleAction = executeAction;
 window.saveGame = saveCampaign;
+window.locateNation = locateAndPulse;
 window.deploymentPending = false;
 
 // Initialize
@@ -94,7 +102,7 @@ function setupNeighborhoods() {
             if (c1 === c2) return;
             const cent2 = getCentroid(c2);
             const dist = Math.sqrt(Math.pow(cent1[0] - cent2[0], 2) + Math.pow(cent1[1] - cent2[1], 2));
-            if (dist < 15) {
+            if (dist < 12) { // Tighter neighborhood check
                 c1.properties.neighbors.push(c2.properties.ADMIN);
             }
         });
@@ -112,10 +120,15 @@ function setupWorld() {
         .polygonsData(mapData)
         .polygonCapColor(d => {
             const ownerColor = getOwnerColor(d.properties.owner);
-            // Fix: Maintain color on hover by reducing alpha instead of disappearing
-            if (hoverCountry === d) {
-                return ownerColor + 'cc'; // 0.8 opacity hex
+            const prog = invasionProgress[d.properties.ADMIN];
+            
+            if (prog && prog.active) {
+                // Real-time gradient representation
+                const targetColor = getOwnerColor(prog.attacker);
+                return `rgba(${hexToRgb(targetColor)}, ${prog.val})`;
             }
+
+            if (hoverCountry === d) return ownerColor + 'cc';
             return ownerColor;
         })
         .polygonSideColor(() => 'rgba(255,255,255,0.05)')
@@ -156,8 +169,14 @@ function setupWorld() {
     });
 }
 
+function hexToRgb(hex) {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `${r}, ${g}, ${b}`;
+}
+
 function setupUIEvents() {
-    // Mode Grid
     document.querySelectorAll('.mode-card').forEach(card => {
         card.addEventListener('click', (e) => {
             document.querySelectorAll('.mode-card').forEach(c => c.classList.remove('active'));
@@ -167,7 +186,6 @@ function setupUIEvents() {
         });
     });
 
-    // Search
     const searchInput = document.getElementById('start-country');
     const resultsDiv = document.getElementById('search-results');
     
@@ -198,21 +216,15 @@ function setupUIEvents() {
         if(e.button !== 2) document.getElementById('ctx-menu').style.display = 'none';
     });
 
-    // Builder remade
     document.getElementById('btn-draw').onclick = () => {
         isDrawing = !isDrawing;
         const btn = document.getElementById('btn-draw');
-        if (isDrawing) {
-            btn.classList.add('active');
-            logMsg("Edit Mode Active: Plot or Shift+Drag");
-        } else {
-            btn.classList.remove('active');
-            logMsg("Edit Mode Suspended");
-        }
+        if (isDrawing) btn.classList.add('active');
+        else btn.classList.remove('active');
     };
 
     document.getElementById('btn-save-build').onclick = () => {
-        if (drawnPoints.length < 3) return logMsg("Minimum 3 nodes required");
+        if (drawnPoints.length < 3) return;
         const newName = prompt("Nation Identity:");
         if (newName) {
             mapData.push({
@@ -229,7 +241,6 @@ function setupUIEvents() {
             world.polygonsData(mapData);
             drawnPoints = [];
             world.pathsData([]);
-            logMsg(`Nation Established: ${newName}`);
         }
     };
 }
@@ -256,12 +267,24 @@ function startDeployment() {
 
     updateUI();
     updateLeaderboard();
-    logMsg(`Deployment: ${startNode.properties.ADMIN}`);
+    logMsg(`System Online: ${startNode.properties.ADMIN}`);
 
     if (activeMode !== 'builder') {
         if (aiInterval) clearInterval(aiInterval);
         aiInterval = setInterval(gameTick, 2000);
     }
+}
+
+function locateAndPulse(adminName) {
+    const target = mapData.find(f => f.properties.ADMIN === adminName);
+    if (!target) return;
+    const centroid = getCentroid(target);
+    world.pointOfView({ lat: centroid[1], lng: centroid[0], altitude: 1.2 }, 1200);
+    
+    // Blue pulse effect
+    activeRings.push({ lat: centroid[1], lng: centroid[0], maxR: 20, speed: 4, repeat: 0, color: PLAYER_COLOR });
+    world.ringsData(activeRings);
+    setTimeout(() => { activeRings = []; world.ringsData([]); }, 1500);
 }
 
 function updateUI() {
@@ -299,9 +322,9 @@ function updateLeaderboard() {
         .slice(0, 10);
 
     lbList.innerHTML = sorted.map((entry, idx) => `
-        <div class="lb-item ${entry[0] === player.empireName ? 'player' : ''}">
-            <span>${idx + 1}. ${entry[0]}</span>
-            <span>${entry[1].terr} / ${formatNum(entry[1].mil)}</span>
+        <div class="lb-item ${entry[0] === player.empireName ? 'player' : ''}" onclick="window.locateNation('${entry[0]}')">
+            <span class="lb-name">${idx + 1}. ${entry[0]}</span>
+            <span class="lb-val">${entry[1].terr} <span class="lb-sub">Sectors</span> / ${formatNum(entry[1].mil)} <span class="lb-sub">Mil</span></span>
         </div>
     `).join('');
 }
@@ -321,7 +344,7 @@ function createTooltip(d) {
         <div class="tactical-tooltip">
             <div style="font-weight:700; border-bottom:1px solid #333; padding-bottom:6px; margin-bottom:6px; display:flex; justify-content:space-between;">
                 ${p.ADMIN}
-                <span style="color:${ownerColor}; font-size:0.6rem;">${p.owner}</span>
+                <span style="color:${ownerColor}; font-size:0.6rem; font-weight:800;">${p.owner}</span>
             </div>
             <div style="display:flex; justify-content:space-between; font-size:0.65rem; color:#888;">
                 <span>Personnel</span>
@@ -338,6 +361,13 @@ function createTooltip(d) {
 function handlePolygonClick(d, e) {
     if (!player.active || activeMode === 'builder') return;
     if (d.properties.owner === player.empireName) return;
+    
+    // Strict Bordering Rule
+    const playerLands = mapData.filter(f => f.properties.owner === player.empireName);
+    const isBordering = playerLands.some(land => land.properties.neighbors.includes(d.properties.ADMIN));
+    
+    if (!isBordering) return logMsg("Not Bordering Target Sector");
+    
     executeInvasion(player.empireName, d);
 }
 
@@ -357,30 +387,56 @@ function executeAction(type) {
     document.getElementById('ctx-menu').style.display = 'none';
     if (!target) return;
 
-    if (type === 'invade') executeInvasion(player.empireName, target);
+    if (type === 'invade') handlePolygonClick(target);
     if (type === 'nuke') launchStrike(player.empireName, target);
 }
 
 function executeInvasion(attackerName, targetFeature) {
-    const attackerLands = mapData.filter(f => f.properties.owner === attackerName);
-    if (attackerLands.length === 0) return;
-
     const targetName = targetFeature.properties.ADMIN;
+    if (invasionProgress[targetName] && invasionProgress[targetName].active) return;
+
+    const attackerLands = mapData.filter(f => f.properties.owner === attackerName);
     let attMil = attackerLands.reduce((sum, f) => sum + f.properties.gameStats.mil, 0);
     let defMil = targetFeature.properties.gameStats.mil;
 
-    if (attMil > defMil * 1.05) {
-        targetFeature.properties.owner = attackerName;
-        targetFeature.properties.gameStats.mil = Math.floor(attMil * 0.05);
-        attackerLands.forEach(f => f.properties.gameStats.mil = Math.floor(f.properties.gameStats.mil * 0.9));
-        if (attackerName === player.empireName) logMsg(`Sektor Acquired: ${targetName}`);
-    } else {
-        attackerLands.forEach(f => f.properties.gameStats.mil = Math.floor(f.properties.gameStats.mil * 0.5));
-        if (attackerName === player.empireName) logMsg(`Assault Repelled: ${targetName}`);
+    // Realistic Power Scale Check
+    // If target is 5x bigger, invasion is nearly impossible
+    if (defMil > attMil * 2.5) {
+        if (attackerName === player.empireName) logMsg(`Insufficient Force for ${targetName}`);
+        return;
     }
 
-    updateUI();
-    updateLeaderboard();
+    invasionProgress[targetName] = { active: true, val: 0, attacker: attackerName };
+    
+    const duration = 2000 + (defMil / 50000) * 1000; // Duration based on military size
+    const start = Date.now();
+
+    const anim = () => {
+        const elapsed = Date.now() - start;
+        const prog = Math.min(1, elapsed / duration);
+        invasionProgress[targetName].val = prog;
+        
+        if (world) world.polygonCapColor(world.polygonCapColor());
+
+        if (prog < 1) {
+            requestAnimationFrame(anim);
+        } else {
+            // Resolution
+            invasionProgress[targetName].active = false;
+            if (attMil > defMil * 1.05) {
+                targetFeature.properties.owner = attackerName;
+                targetFeature.properties.gameStats.mil = Math.floor(attMil * 0.05);
+                attackerLands.forEach(f => f.properties.gameStats.mil = Math.floor(f.properties.gameStats.mil * 0.9));
+                if (attackerName === player.empireName) logMsg(`Annexed: ${targetName}`);
+            } else {
+                attackerLands.forEach(f => f.properties.gameStats.mil = Math.floor(f.properties.gameStats.mil * 0.5));
+                if (attackerName === player.empireName) logMsg(`Failed Assault: ${targetName}`);
+            }
+            updateUI();
+            updateLeaderboard();
+        }
+    };
+    anim();
 }
 
 function launchStrike(attackerName, targetFeature) {
@@ -402,7 +458,7 @@ function launchStrike(attackerName, targetFeature) {
         
         targetFeature.properties.gameStats.pop = Math.floor(targetFeature.properties.gameStats.pop * 0.1);
         targetFeature.properties.gameStats.mil = Math.floor(targetFeature.properties.gameStats.mil * 0.05);
-        logMsg(`Target Nullified: ${targetFeature.properties.ADMIN}`);
+        logMsg(`GRID DOWN: ${targetFeature.properties.ADMIN}`);
         updateUI();
         
         setTimeout(() => { activeRings = []; world.ringsData([]); }, 2000);
@@ -445,7 +501,9 @@ function gameTick() {
         }
 
         const totalMil = myLands.reduce((sum, f) => sum + f.properties.gameStats.mil, 0);
-        if (totalMil > target.properties.gameStats.mil * 1.5) {
+        
+        // AI Logic: Adjacency and Realistic Scale
+        if (totalMil > target.properties.gameStats.mil * 1.5 && target.properties.gameStats.mil < totalMil * 0.6) {
             executeInvasion(emp, target);
         }
     });
@@ -454,7 +512,7 @@ function gameTick() {
     updateLeaderboard();
 
     if (mapData.filter(f => f.properties.owner === player.empireName).length === 0) {
-        logMsg("Network Collapse: Connection Lost");
+        logMsg("DEFEAT: DOMAIN COLLAPSED");
         player.active = false;
         clearInterval(aiInterval);
     }
