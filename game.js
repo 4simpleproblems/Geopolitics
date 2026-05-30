@@ -19,6 +19,7 @@ let hasUnsavedChanges = false;
 let aiInterval = null;
 let activeArcs = [];
 let activeRings = [];
+let explosionData = []; // For 3D explosions
 let invasionProgress = {}; 
 
 // IndexedDB Setup
@@ -32,7 +33,7 @@ const dbPromise = new Promise((resolve, reject) => {
 });
 
 // Colors
-const PLAYER_COLOR = '#0070f3'; // Vercel Blue
+const PLAYER_COLOR = '#0070f3';
 const COLORS = {
     1: '#ff4d4d', 2: '#7928ca', 3: '#00dfd8', 4: '#ffca28', 
     5: '#9b59b6', 6: '#ff0080', 7: '#50e3c2'
@@ -140,10 +141,27 @@ function setupWorld() {
             if (world) world.polygonCapColor(world.polygonCapColor());
         })
         .onPolygonClick((d, e) => handlePolygonClick(d, e))
-        .onPolygonRightClick((d, e) => showCtxMenu(d, e));
+        .onPolygonRightClick((d, e) => showCtxMenu(d, e))
+        // 3D EXPLOSION LAYER
+        .customLayerData(explosionData)
+        .customThreeObject(d => {
+            const group = new THREE.Group();
+            const mat = new THREE.MeshLambertMaterial({ color: 0xff4d4d, transparent: true, opacity: 0.8 });
+            const sphere = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 16), mat);
+            sphere.position.y = 0.5;
+            group.add(sphere);
+            return group;
+        })
+        .customThreeObjectUpdate((obj, d) => {
+            const scale = d.radius * (1 - d.age);
+            obj.scale.set(scale, scale, scale);
+            obj.children[0].material.opacity = 1 - d.age;
+        });
 
+    // Slow rotation & Tilted axis for Menu
     world.controls().autoRotate = true;
-    world.controls().autoRotateSpeed = 0.5;
+    world.controls().autoRotateSpeed = 0.3;
+    world.pointOfView({ lat: 20, lng: 0, altitude: 2.5 });
 
     world.onGlobeClick((coords, event) => {
         if (activeMode !== 'builder' || !player.active || !isDrawing) return;
@@ -188,7 +206,6 @@ function setupUIEvents() {
         const val = e.target.value.toLowerCase();
         if (!val) { resultsDiv.style.display = 'none'; return; }
         
-        // SUPPORT ABBREVIATIONS: Check ADMIN, ADM0_A3, ISO_A2, ISO_A3
         const matches = mapData.filter(f => 
             f.properties.ADMIN.toLowerCase().includes(val) || 
             (f.properties.ADM0_A3 && f.properties.ADM0_A3.toLowerCase().includes(val)) ||
@@ -214,7 +231,7 @@ function setupUIEvents() {
 
     document.addEventListener('click', (e) => {
         if(e.target !== searchInput && e.target !== resultsDiv) resultsDiv.style.display = 'none';
-        if(e.button !== 2) document.getElementById('ctx-menu').style.display = 'none';
+        if(e.button !== 2 && document.getElementById('ctx-menu')) document.getElementById('ctx-menu').style.display = 'none';
     });
 
     document.getElementById('btn-draw').onclick = () => {
@@ -272,7 +289,7 @@ function startDeployment() {
 
     updateUI();
     updateLeaderboard();
-    logMsg(`System Online: ${startNode.properties.ADMIN}`);
+    logMsg(`Deployment successful: ${startNode.properties.ADMIN}`);
 
     if (activeMode !== 'builder') {
         if (aiInterval) clearInterval(aiInterval);
@@ -295,18 +312,23 @@ function updateUI() {
     const playerLands = mapData.filter(f => f.properties.owner === player.empireName);
     player.stats.pop = playerLands.reduce((sum, f) => sum + f.properties.gameStats.pop, 0);
     player.stats.mil = playerLands.reduce((sum, f) => sum + f.properties.gameStats.mil, 0);
-    document.getElementById('val-empire').innerText = player.empireName;
-    document.getElementById('val-terr').innerText = playerLands.length;
-    document.getElementById('val-mil').innerText = formatNum(player.stats.mil);
+    const vEmpire = document.getElementById('val-empire');
+    const vTerr = document.getElementById('val-terr');
+    const vMil = document.getElementById('val-mil');
+    if (vEmpire) vEmpire.innerText = player.empireName;
+    if (vTerr) vTerr.innerText = playerLands.length;
+    if (vMil) vMil.innerText = formatNum(player.stats.mil);
     world.polygonsData(mapData);
 }
 
 function updateLeaderboard() {
     if (activeMode === 'builder') {
-        document.getElementById('leaderboard').style.display = 'none';
+        const lb = document.getElementById('leaderboard');
+        if (lb) lb.style.display = 'none';
         return;
     }
     const lbList = document.getElementById('lb-list');
+    if (!lbList) return;
     let scores = {};
     mapData.forEach(f => {
         const owner = f.properties.owner;
@@ -357,7 +379,7 @@ function handlePolygonClick(d, e) {
     if (d.properties.owner === player.empireName) return;
     const playerLands = mapData.filter(f => f.properties.owner === player.empireName);
     const isBordering = playerLands.some(land => land.properties.neighbors.includes(d.properties.ADMIN));
-    if (!isBordering) return logMsg("Not Bordering Target Sector");
+    if (!isBordering) return logMsg("Tactical Block: No Common Border");
     executeInvasion(player.empireName, d);
     hasUnsavedChanges = true;
 }
@@ -393,7 +415,7 @@ function executeInvasion(attackerName, targetFeature) {
     let defMil = targetFeature.properties.gameStats.mil;
     
     if (defMil > attMil * 2.5) {
-        if (attackerName === player.empireName) logMsg(`Insufficient Force for ${targetName}`);
+        if (attackerName === player.empireName) logMsg(`Defensive Overpower: ${targetName}`);
         return;
     }
 
@@ -430,10 +452,10 @@ function executeInvasion(attackerName, targetFeature) {
                 targetFeature.properties.owner = attackerName;
                 targetFeature.properties.gameStats.mil = Math.floor(attMil * 0.05);
                 attackerLands.forEach(f => f.properties.gameStats.mil = Math.floor(f.properties.gameStats.mil * 0.9));
-                if (attackerName === player.empireName) logMsg(`Annexed: ${targetName}`);
+                if (attackerName === player.empireName) logMsg(`Annexation Complete: ${targetName}`);
             } else {
                 attackerLands.forEach(f => f.properties.gameStats.mil = Math.floor(f.properties.gameStats.mil * 0.5));
-                if (attackerName === player.empireName) logMsg(`Failed Assault: ${targetName}`);
+                if (attackerName === player.empireName) logMsg(`Offensive Repelled: ${targetName}`);
             }
             updateUI(); updateLeaderboard();
         }
@@ -452,16 +474,34 @@ function launchStrike(attackerName, targetFeature) {
         color: ['#ffffff', '#ee0000']
     });
     world.arcsData(activeArcs);
+
     setTimeout(() => {
         activeArcs = activeArcs.filter(a => a.endLat !== centroid[1] || a.endLng !== centroid[0]);
         world.arcsData(activeArcs);
-        confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 }, colors: ['#ff4d4d', '#ffca28', '#333333'], scalar: 1.2, gravity: 2 });
+        
+        // 3D EXPLOSION OBJECT
+        const boom = { lat: centroid[1], lng: centroid[0], radius: 15, age: 0 };
+        explosionData.push(boom);
+        world.customLayerData(explosionData);
+
+        const boomAnim = () => {
+            boom.age += 0.02;
+            if (boom.age < 1) {
+                world.customLayerData(explosionData);
+                requestAnimationFrame(boomAnim);
+            } else {
+                explosionData = explosionData.filter(b => b !== boom);
+                world.customLayerData(explosionData);
+            }
+        };
+        boomAnim();
+
         document.body.classList.add('shake');
         activeRings.push({ lat: centroid[1], lng: centroid[0], maxR: 25, speed: 6, repeat: 0, color: '#ee0000' });
         world.ringsData(activeRings);
         targetFeature.properties.gameStats.pop = Math.floor(targetFeature.properties.gameStats.pop * 0.1);
         targetFeature.properties.gameStats.mil = Math.floor(targetFeature.properties.gameStats.mil * 0.05);
-        logMsg(`GRID DOWN: ${targetFeature.properties.ADMIN}`);
+        logMsg(`Impact Confirmed: ${targetFeature.properties.ADMIN}`);
         updateUI();
         setTimeout(() => { activeRings = []; world.ringsData([]); document.body.classList.remove('shake'); }, 1000);
     }, 1000);
@@ -493,7 +533,7 @@ function gameTick() {
     });
     updateUI(); updateLeaderboard();
     if (mapData.filter(f => f.properties.owner === player.empireName).length === 0) {
-        logMsg("DEFEAT: DOMAIN COLLAPSED");
+        logMsg("Network Collapse: Domain Lost");
         player.active = false;
         clearInterval(aiInterval);
     }
@@ -503,12 +543,12 @@ async function pauseAndSaveGame() {
     isPaused = !isPaused;
     const btn = document.getElementById('btn-pause-save');
     if (isPaused) {
-        btn.innerHTML = '<i class="fa-solid fa-play"></i> Resume';
-        logMsg("Game Paused");
+        btn.innerHTML = '<i class="fa-solid fa-play"></i> RESUME';
+        logMsg("Operational Pause");
         await saveCampaign();
     } else {
-        btn.innerHTML = '<i class="fa-solid fa-pause"></i> Pause & Save';
-        logMsg("Game Resumed");
+        btn.innerHTML = '<i class="fa-solid fa-pause"></i> PAUSE & SAVE';
+        logMsg("Operational Resume");
     }
 }
 
@@ -529,7 +569,7 @@ async function saveCampaign() {
         tx.oncomplete = () => {
             setTimeout(() => {
                 if (overlay) overlay.style.display = 'none';
-                logMsg("Backup successful");
+                logMsg("Backup Synced");
                 hasUnsavedChanges = false;
                 loadSavesFromDB();
                 resolve();
@@ -545,9 +585,9 @@ async function loadSavesFromDB() {
     const tx = db.transaction(STORE_NAME, 'readonly');
     const request = tx.objectStore(STORE_NAME).getAll();
     request.onsuccess = () => {
-        const saves = request.result.reverse().slice(0, 10);
+        const saves = request.result.reverse().slice(0, 5);
         if (saves.length === 0) {
-            savesList.innerHTML = '<div style="color: #666; font-size: 0.8rem;">No backup states found.</div>';
+            savesList.innerHTML = '<div style="color: #444; font-size: 0.8rem;">No operational backups detected.</div>';
             return;
         }
         savesList.innerHTML = saves.map(s => `
@@ -580,7 +620,7 @@ window.restoreFromDB = async (id) => {
 
 function exitToMenuFlow() {
     if (hasUnsavedChanges) {
-        if (!confirm("Exit without saving? Unsaved tactical progress will be lost.")) return;
+        if (!confirm("Confirm Extraction: Unsaved tactical progress will be purged.")) return;
     }
     location.reload();
 }

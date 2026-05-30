@@ -19,6 +19,12 @@ body { background: var(--bg); color: var(--geist-foreground); overflow: hidden; 
 .overlay { position: fixed; z-index: 10; pointer-events: none; width: 100vw; height: 100vh; }
 .overlay * { pointer-events: auto; }
 
+#brand-header {
+    position: fixed; top: 2rem; right: 2rem;
+    font-size: 0.75rem; font-weight: 800; letter-spacing: 0.2em;
+    color: var(--accents-5); z-index: 100;
+}
+
 /* Status Bar */
 #status-bar { 
     position: fixed; top: 2rem; left: 2rem; 
@@ -31,14 +37,14 @@ body { background: var(--bg); color: var(--geist-foreground); overflow: hidden; 
 .status-item { display: flex; align-items: center; gap: 0.5rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--accents-5); font-weight: 500;}
 .status-val { color: #fff; font-weight: 700; font-family: monospace; }
 
-/* Leaderboard - Wider & Responsive */
+/* Leaderboard */
 #leaderboard { 
-    position: fixed; top: 2rem; right: 2rem; 
+    position: fixed; top: 5rem; right: 2rem; 
     background: rgba(0,0,0,0.8); border: 1px solid var(--accents-2); 
     padding: 20px; border-radius: 12px; 
     width: 380px; max-width: 35vw;
     backdrop-filter: blur(10px);
-    max-height: 70vh; overflow: hidden; display: flex; flex-direction: column;
+    max-height: 60vh; overflow: hidden; display: flex; flex-direction: column;
 }
 .lb-title { font-weight: 700; font-size: 0.85rem; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; color: #fff; }
 .lb-header { display: flex; justify-content: space-between; font-size: 0.65rem; color: var(--accents-5); margin-bottom: 8px; border-bottom: 1px solid var(--accents-2); padding-bottom: 8px; }
@@ -54,11 +60,78 @@ body { background: var(--bg); color: var(--geist-foreground); overflow: hidden; 
 .lb-val { font-family: monospace; font-weight: 600; text-align: right; }
 .lb-sub { font-size: 0.6rem; color: var(--accents-5); text-transform: uppercase; margin-left: 2px; }
 
-/* Control Buttons */
-#controls {
-    position: fixed; bottom: 2rem; right: 2rem;
-    display: flex; gap: 12px;
+/* Setup Screen Overhaul */
+#setup-screen { 
+    position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; 
+    background: #000; z-index: 1000; overflow: hidden;
 }
+.setup-layout { display: flex; width: 100%; height: 100%; }
+
+.setup-info { 
+    flex: 1; display: flex; align-items: center; justify-content: flex-end; 
+    padding: 0 4rem; background: linear-gradient(90deg, #000 70%, transparent 100%);
+    position: relative; z-index: 2;
+}
+.info-content { width: 550px; }
+.info-content h1 { font-size: 3.5rem; font-weight: 800; letter-spacing: -0.06em; line-height: 1; margin-bottom: 1.5rem; }
+.info-content .mission { color: var(--accents-5); font-size: 1.1rem; line-height: 1.6; margin-bottom: 3rem; }
+
+.feature-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-bottom: 4rem; }
+.f-item i { color: #fff; margin-bottom: 1rem; font-size: 1.2rem; }
+.f-item h3 { font-size: 0.9rem; font-weight: 700; margin-bottom: 0.5rem; }
+.f-item p { font-size: 0.8rem; color: var(--accents-5); line-height: 1.5; }
+
+.recent-deployments h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--accents-5); margin-bottom: 1.5rem; }
+.save-list { display: flex; flex-direction: column; gap: 0.75rem; }
+.save-item { 
+    padding: 12px 16px; border: 1px solid var(--accents-2); border-radius: 8px; 
+    cursor: pointer; transition: 0.2s;
+}
+.save-item:hover { border-color: #fff; background: var(--accents-1); }
+.save-item .title { font-weight: 700; font-size: 0.85rem; margin-bottom: 4px; }
+.save-item .meta { font-size: 0.7rem; color: var(--accents-5); }
+
+.setup-command { 
+    flex: 1; position: relative; 
+    display: flex; align-items: center; justify-content: center;
+    padding: 4rem;
+}
+.command-card { 
+    width: 450px; background: rgba(0,0,0,0.8); 
+    border: 1px solid var(--accents-2); border-radius: 16px; 
+    padding: 40px; backdrop-filter: blur(20px); 
+    position: relative; z-index: 3;
+}
+
+.input-group { position: relative; margin-bottom: 30px; }
+.input-group label { font-size: 0.7rem; font-weight: 800; color: var(--accents-5); margin-bottom: 12px; display: block; text-transform: uppercase; letter-spacing: 0.05em; }
+#start-country { 
+    width: 100%; background: #000; border: 1px solid var(--accents-2); 
+    color: #fff; padding: 14px 20px; border-radius: 8px; font-size: 1rem; 
+    outline: none; transition: border-color 0.2s; font-weight: 600;
+}
+#start-country:focus { border-color: #fff; }
+
+.modes-grid { display: grid; grid-template-columns: 1fr; gap: 10px; margin-bottom: 30px; }
+.mode-card { 
+    border: 1px solid var(--accents-2); border-radius: 10px; padding: 16px; 
+    cursor: pointer; transition: all 0.2s; display: flex; flex-direction: column; gap: 4px;
+}
+.mode-card:hover { border-color: var(--accents-5); background: var(--accents-1); }
+.mode-card.active { border-color: #fff; background: #fff; color: #000; }
+.mode-card.active span { color: rgba(0,0,0,0.6); }
+.mode-card strong { font-size: 0.85rem; font-weight: 800; }
+.mode-card span { font-size: 0.7rem; color: var(--accents-5); }
+
+.btn-deploy { 
+    width: 100%; background: #fff; color: #000; border: none; padding: 18px; 
+    border-radius: 8px; font-weight: 800; font-size: 0.85rem; 
+    letter-spacing: 0.05em; cursor: pointer; transition: opacity 0.2s;
+}
+.btn-deploy:hover { opacity: 0.9; }
+
+/* In-Game UI Rest */
+#controls { position: fixed; bottom: 2rem; right: 2rem; display: flex; gap: 12px; }
 .btn-action {
     background: rgba(0,0,0,0.8); border: 1px solid var(--accents-2);
     color: #fff; padding: 10px 20px; border-radius: 8px;
@@ -69,7 +142,6 @@ body { background: var(--bg); color: var(--geist-foreground); overflow: hidden; 
 .btn-action:hover { border-color: #fff; background: #fff; color: #000; }
 .btn-action.danger:hover { border-color: var(--geist-error); background: var(--geist-error); color: #fff; }
 
-/* Saving Animation */
 #saving-overlay {
     position: fixed; top: 2rem; left: 50%; transform: translateX(-50%);
     background: #fff; color: #000; padding: 8px 16px; border-radius: 20px;
@@ -82,34 +154,22 @@ body { background: var(--bg); color: var(--geist-foreground); overflow: hidden; 
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* Setup Screen */
-#setup-screen { 
-    position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; 
-    background: #000; display: flex; justify-content: center; align-items: center; z-index: 100; 
+.tactical-tooltip { 
+    background: #000; border: 1px solid var(--accents-2); 
+    padding: 12px; border-radius: 8px; color: #fff; 
+    min-width: 180px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);
 }
-.setup-container { 
-    display: flex; width: 1000px; max-width: 95vw; 
-    background: #000; border: 1px solid var(--accents-2); border-radius: 12px; 
-    height: 600px;
+
+#combat-log {
+    position: fixed; bottom: 2rem; left: 2rem;
+    font-size: 0.7rem; font-weight: 700; letter-spacing: 0.05em;
+    color: var(--accents-5); text-transform: uppercase;
 }
-.setup-left { flex: 1.2; padding: 60px; display: flex; flex-direction: column; border-right: 1px solid var(--accents-2); }
-.setup-left h1 { font-size: 2.5rem; font-weight: 800; letter-spacing: -0.06em; margin-bottom: 8px; }
 
-.modes-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 40px; }
-.mode-card { 
-    border: 1px solid var(--accents-2); border-radius: 8px; padding: 16px; 
-    cursor: pointer; transition: all 0.2s;
-}
-.mode-card.active { border-color: #fff; background: #fff; color: #000; }
-
-.setup-right { flex: 0.8; padding: 60px 40px; background: #050505; display: flex; flex-direction: column;}
-.save-list { flex: 1; overflow-y: auto; }
-
-/* ... Rest of existing styles ... */
 #search-results {
-    position: absolute; top: 100%; left: 0; width: 100%;
+    position: absolute; bottom: 100%; left: 0; width: 100%;
     background: #000; border: 1px solid var(--accents-2);
-    border-radius: 6px; margin-top: 4px; max-height: 200px;
+    border-radius: 6px; margin-bottom: 4px; max-height: 200px;
     overflow-y: auto; z-index: 100; display: none;
 }
 .search-item { padding: 10px 16px; font-size: 0.85rem; cursor: pointer; }

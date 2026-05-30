@@ -10,18 +10,21 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Manrope:wght@400;600;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
+    <script src="https://unpkg.com/three"></script>
     <script src="https://unpkg.com/globe.gl"></script>
     <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
     <div id="globe-container"></div>
 
+    <!-- Brand Name Top Right -->
+    <div id="brand-header">GEOPOLITICS // GLOBAL COMMAND</div>
+
     <div id="saving-overlay">
         <div class="spinner"></div>
-        <span>Saving progress...</span>
+        <span>Syncing Database...</span>
     </div>
 
     <div class="overlay">
@@ -49,7 +52,7 @@
             <div style="font-size: 0.7rem; color: #888; margin-left: 10px;">Shift+Drag to move nodes</div>
         </div>
 
-        <!-- Controls -->
+        <!-- In-Game Controls -->
         <div id="controls" style="display: none;">
             <button class="btn-action" id="btn-pause-save" onclick="window.pauseAndSave()"><i class="fa-solid fa-pause"></i> Pause & Save</button>
             <button class="btn-action danger" onclick="window.exitToMenu()"><i class="fa-solid fa-right-from-bracket"></i> Exit</button>
@@ -61,46 +64,78 @@
     <!-- Context Menu -->
     <div id="ctx-menu">
         <div class="ctx-item" onclick="handleAction('invade')"><i class="fa-solid fa-crosshairs"></i> Takeover</div>
-        <div class="ctx-item" onclick="handleAction('nuke')" style="color:var(--geist-error)"><i class="fa-solid fa-radiation"></i> Nuke</div>
+        <div class="ctx-item" onclick="handleAction('nuke')" style="color:var(--geist-error)"><i class="fa-solid fa-radiation"></i> Strategic Strike</div>
     </div>
 
-    <!-- Setup Screen -->
+    <!-- Setup Screen Overhaul -->
     <div id="setup-screen">
-        <div class="setup-container">
-            <div class="setup-left">
-                <h1>GEOPOLITICS</h1>
-                <p>Global territorial simulation engine.</p>
-                
-                <div class="input-group">
-                    <label>Starting Point</label>
-                    <input type="text" id="start-country" placeholder="Search names or abbreviations (e.g. USA, RUS)..." autocomplete="off">
-                    <div id="search-results"></div>
-                </div>
+        <div class="setup-layout">
+            <!-- Left Side: Educational Content -->
+            <div class="setup-info">
+                <div class="info-content">
+                    <h1>A Laboratory for Global Strategy</h1>
+                    <p class="mission">Geopolitics is a real-time educational simulation designed to explore the complexities of territorial acquisition, international relations, and resource management. This is more than a game; it is a sandbox for understanding how borders shift through military parity and strategic positioning.</p>
+                    
+                    <div class="feature-grid">
+                        <div class="f-item">
+                            <i class="fa-solid fa-microchip"></i>
+                            <h3>Territorial AI</h3>
+                            <p>Real-time neighboring logic based on military relative strength.</p>
+                        </div>
+                        <div class="f-item">
+                            <i class="fa-solid fa-database"></i>
+                            <h3>Global Datasets</h3>
+                            <p>Utilizing high-resolution GeoJSON for real-world accuracy.</p>
+                        </div>
+                        <div class="f-item">
+                            <i class="fa-solid fa-shield-halved"></i>
+                            <h3>Defensive Parity</h3>
+                            <p>Simulating the cost of war through progressive annexation.</p>
+                        </div>
+                        <div class="f-item">
+                            <i class="fa-solid fa-user-graduate"></i>
+                            <h3>Educational Sandbox</h3>
+                            <p>Designed to visualize the impact of geopolitical decisions on a global scale.</p>
+                        </div>
+                    </div>
 
-                <div class="input-group">
-                    <label>Operation Mode</label>
-                    <div class="modes-grid">
-                        <div class="mode-card active" data-mode="takeover">
-                            <strong>Takeover</strong>
-                            <span>Standard tactical expansion.</span>
-                        </div>
-                        <div class="mode-card" data-mode="survival">
-                            <strong>Survival</strong>
-                            <span>Survive the global onslaught.</span>
-                        </div>
-                        <div class="mode-card" data-mode="builder">
-                            <strong>Builder</strong>
-                            <span>Peaceful vector construction.</span>
+                    <div class="recent-deployments">
+                        <h2>Recent Operational States</h2>
+                        <div id="saves-list" class="save-list">
+                            <div style="color: #444; font-size: 0.8rem;">No backup states found.</div>
                         </div>
                     </div>
                 </div>
-
-                <button class="btn-deploy" onclick="initializeGame()">Deploy System</button>
             </div>
-            <div class="setup-right">
-                <h2>Recent Deployments</h2>
-                <div id="saves-list" class="save-list">
-                    <div style="color: #666; font-size: 0.8rem;">No backup states found.</div>
+
+            <!-- Right Side: Command Interface + Globe Preview -->
+            <div class="setup-command">
+                <div class="command-card">
+                    <div class="input-group">
+                        <label>Target Origin Point</label>
+                        <input type="text" id="start-country" placeholder="Name or Abbreviation (e.g. USA, UKR)..." autocomplete="off">
+                        <div id="search-results"></div>
+                    </div>
+
+                    <div class="input-group">
+                        <label>Operational Methodology</label>
+                        <div class="modes-grid">
+                            <div class="mode-card active" data-mode="takeover">
+                                <strong>TAKEOVER</strong>
+                                <span>Expand empire borders through tactical neighboring annexation.</span>
+                            </div>
+                            <div class="mode-card" data-mode="survival">
+                                <strong>SURVIVAL</strong>
+                                <span>Hostile environment. Global AI will target your sectors.</span>
+                            </div>
+                            <div class="mode-card" data-mode="builder">
+                                <strong>BUILDER</strong>
+                                <span>Peaceful mode for custom vector construction.</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button class="btn-deploy" onclick="initializeGame()">INITIATE SYSTEM DEPLOYMENT</button>
                 </div>
             </div>
         </div>
