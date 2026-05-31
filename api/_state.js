@@ -43,7 +43,8 @@ export async function loadOriginalMap() {
 async function kvRequest(command, args = []) {
     const url = `${process.env.KV_REST_API_URL}/${command}/${args.join('/')}`;
     const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${process.env.KV_REST_API_TOKEN}` }
+        headers: { Authorization: `Bearer ${process.env.KV_REST_API_TOKEN}` },
+        cache: 'no-store'
     });
     return await res.json();
 }
@@ -53,7 +54,8 @@ async function kvSet(key, value) {
     await fetch(url, {
         method: 'POST',
         headers: { Authorization: `Bearer ${process.env.KV_REST_API_TOKEN}` },
-        body: JSON.stringify(value)
+        body: JSON.stringify(value),
+        cache: 'no-store'
     });
 }
 
@@ -92,7 +94,8 @@ async function fetchProfile(playerId) {
             headers: {
                 'apikey': 'sb_publishable_12ymAaNfKTNDknIvcDVdEQ_l7P8jfdr',
                 'Authorization': 'Bearer sb_publishable_12ymAaNfKTNDknIvcDVdEQ_l7P8jfdr'
-            }
+            },
+            cache: 'no-store'
         });
         if (res.ok) {
             const data = await res.json();
@@ -117,7 +120,8 @@ async function upsertProfile(profile) {
                 'Content-Type': 'application/json',
                 'Prefer': 'resolution=merge-duplicates'
             },
-            body: JSON.stringify(row)
+            body: JSON.stringify(row),
+            cache: 'no-store'
         });
     } catch (e) {
         console.error('Error saving profile to Supabase', e);

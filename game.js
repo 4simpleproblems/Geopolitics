@@ -926,7 +926,11 @@ function showCtxMenu(d, e) {
                 } else if (skillId === 'airstrike') {
                     html += `<div class="ctx-item" onclick="window.handleContextAction('airstrike')"><i class="fa-solid fa-jet-fighter"></i> Launch Airstrike</div>`;
                 } else if (skillId === 'nuke') {
-                    html += `<div class="ctx-item" onclick="window.handleContextAction('nuke')" style="color:var(--error)"><i class="fa-solid fa-radiation"></i> Drop Nuke</div>`;
+                    if (profile.nukeUsed) {
+                        html += `<div class="ctx-item" style="color:var(--text-secondary); opacity:0.5; cursor:not-allowed; pointer-events:none;"><i class="fa-solid fa-radiation"></i> Drop Nuke (Used)</div>`;
+                    } else {
+                        html += `<div class="ctx-item" onclick="window.handleContextAction('nuke')" style="color:var(--error)"><i class="fa-solid fa-radiation"></i> Drop Nuke</div>`;
+                    }
                 } else if (skillId === 'propaganda') {
                     html += `<div class="ctx-item" onclick="window.handleContextAction('propaganda')"><i class="fa-solid fa-bullhorn"></i> Propaganda Campaign</div>`;
                 } else if (skillId === 'intelHack') {

@@ -96,6 +96,7 @@ export default async function handler(req, res) {
         profile.stats.peakMilitary = Math.max(profile.stats.peakMilitary, targetFeature.properties.gameStats.mil);
         state.difficulty = difficulty || 'normal';
         profile.activeGame = true;
+        profile.nukeUsed = false;
 
         await saveState(state, playerId);
         return res.status(200).json({ success: true, country: targetFeature.properties.ADMIN, profile, mapState: getMapStateSummary(state) });
@@ -245,6 +246,11 @@ export default async function handler(req, res) {
         }
 
         if (skillId === 'nuke') {
+            if (profile.nukeUsed) {
+                return res.status(400).json({ error: 'You have already used your single nuke for this game.' });
+            }
+            profile.nukeUsed = true;
+
             targetFeature.properties.gameStats.mil = Math.floor(targetFeature.properties.gameStats.mil * 0.1);
             targetFeature.properties.gameStats.pop = Math.floor(targetFeature.properties.gameStats.pop * 0.2);
             targetFeature.properties.gameStats.fallout = true;

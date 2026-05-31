@@ -281,8 +281,8 @@ function resolvePendingAction(state, action) {
         let attMil = attackerLands.reduce((sum, f) => sum + f.properties.gameStats.mil, 0);
         let defMil = targetFeature.properties.gameStats.mil;
 
-        const attStrength = attMil * (0.85 + Math.random() * 0.3);
-        const defStrength = defMil * (0.85 + Math.random() * 0.3);
+        const attStrength = attMil * (0.6 + Math.random() * 0.3);
+        const defStrength = defMil * (0.95 + Math.random() * 0.3);
 
         if (attStrength > defStrength) {
             targetFeature.properties.owner = attackerName;
