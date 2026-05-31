@@ -13,7 +13,7 @@ function getCentroid(feature) {
     }
 }
 
-async function loadOriginalMap() {
+export async function loadOriginalMap() {
     const geoPath = path.join(process.cwd(), 'map.geojson');
     const geoData = JSON.parse(await fs.readFile(geoPath, 'utf-8'));
     const originalFeatures = geoData.features.map(f => {

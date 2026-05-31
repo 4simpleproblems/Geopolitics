@@ -1009,10 +1009,43 @@ body {
     animation-iteration-count: infinite;
 }
 
+.toggle-btn {
+    flex: 1;
+    background: #000;
+    border: none;
+    color: var(--text-secondary);
+    padding: 10px;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.toggle-btn:hover {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.05);
+}
+
 .toggle-btn.active {
     background: #ffffff !important;
     color: #000000 !important;
 }
+
+#diff-easy.active {
+    background: #10b981 !important;
+    color: #ffffff !important;
+}
+
+#diff-normal.active {
+    background: #3b82f6 !important;
+    color: #ffffff !important;
+}
+
+#diff-hard.active {
+    background: #ef4444 !important;
+    color: #ffffff !important;
+}
+
 
 .settings-trigger-btn {
     background: transparent;

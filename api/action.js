@@ -1,4 +1,4 @@
-import { getState, saveState } from './_state.js';
+import { getState, saveState, loadOriginalMap } from './_state.js';
 
 function getCentroid(feature) {
     if (feature.geometry && feature.geometry.coordinates) {
@@ -37,18 +37,18 @@ export default async function handler(req, res) {
     if (!state.pendingActions) state.pendingActions = [];
 
     if (type === 'SPAWN') {
+        state.mapData = await loadOriginalMap();
+        state.pendingActions = [];
+        state.activeEvents = [];
+        state.isPaused = false;
+        state.lastTick = Date.now();
+
         const targetFeature = state.mapData.find(f => f.properties.ADMIN.toLowerCase() === target.toLowerCase());
         if (!targetFeature) {
             return res.status(400).json({ error: 'Nation Unknown.' });
         }
 
-        const isClaimedBySelf = targetFeature.properties.owner === profile.username;
-        const isClaimedByOther = targetFeature.properties.owner !== targetFeature.properties.ADMIN && !isClaimedBySelf;
-        const isClaimedByActivePlayer = Object.values(state.db).some(p => p.id !== playerId && targetFeature.properties.owner === p.username);
-
-        if (isClaimedByOther || isClaimedByActivePlayer) {
-            return res.status(400).json({ error: 'Target sector already claimed.' });
-        }
+        profile.username = targetFeature.properties.ADMIN;
 
         const econLvl = profile.skills.economicHeadstart || 0;
         const popBoost = 1 + (econLvl * 0.05);
@@ -62,13 +62,13 @@ export default async function handler(req, res) {
         profile.activeGame = true;
 
         await saveState(state, playerId);
-        return res.status(200).json({ success: true, country: targetFeature.properties.ADMIN });
+        return res.status(200).json({ success: true, country: targetFeature.properties.ADMIN, profile });
     }
 
     if (type === 'INVADE') {
         const targetFeature = state.mapData.find(f => f.properties.ADMIN === target);
         if (!targetFeature) {
-            return res.status(400).json({ error: 'Target sector not found.' });
+            return res.status(400).json({ error: 'Target country not found.' });
         }
 
         if (targetFeature.properties.owner === profile.username) {
@@ -77,7 +77,7 @@ export default async function handler(req, res) {
 
         const playerLands = state.mapData.filter(f => f.properties.owner === profile.username);
         if (playerLands.length === 0) {
-            return res.status(400).json({ error: 'You do not own any sectors.' });
+            return res.status(400).json({ error: 'You do not own any countries.' });
         }
 
         const isBordering = playerLands.some(land => land.properties.neighbors.includes(target));
@@ -126,12 +126,12 @@ export default async function handler(req, res) {
     if (type === 'NUKE') {
         const targetFeature = state.mapData.find(f => f.properties.ADMIN === target);
         if (!targetFeature) {
-            return res.status(400).json({ error: 'Target sector not found.' });
+            return res.status(400).json({ error: 'Target country not found.' });
         }
 
         const playerLands = state.mapData.filter(f => f.properties.owner === profile.username);
         if (playerLands.length === 0) {
-            return res.status(400).json({ error: 'You do not own any sectors.' });
+            return res.status(400).json({ error: 'You do not own any countries.' });
         }
 
         state.pendingActions.push({

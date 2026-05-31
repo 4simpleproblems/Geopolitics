@@ -67,6 +67,22 @@ window.setResolution = (res) => {
     }
 };
 
+function showLoading(text) {
+    const loadingScreen = document.getElementById('loading-screen');
+    const loadingText = document.getElementById('loading-text');
+    if (loadingScreen && loadingText) {
+        loadingText.innerText = text.toUpperCase();
+        loadingScreen.style.display = 'flex';
+    }
+}
+
+function hideLoading() {
+    const loadingScreen = document.getElementById('loading-screen');
+    if (loadingScreen) {
+        loadingScreen.style.display = 'none';
+    }
+}
+
 function initSupabase() {
     const url = 'https://epnjfsfveqbvoimpstbd.supabase.co';
     const key = 'sb_publishable_12ymAaNfKTNDknIvcDVdEQ_l7P8jfdr';
@@ -719,17 +735,13 @@ async function sendAction(payload) {
 
 async function requestSpawn() {
     const query = document.getElementById('start-country').value.trim();
-    if (!query) return alert('Select target sector.');
-
-    let finalName = localStorage.getItem('geo_player_name');
-    if (!finalName) {
-        finalName = prompt('Enter Empire Identifier Name:') || 'Commander';
-        localStorage.setItem('geo_player_name', finalName);
-    }
+    if (!query) return alert('Select a starting country.');
 
     try {
+        showLoading('Establishing Country Command...');
         const result = await sendAction({ type: 'SPAWN', target: query, difficulty: selectedDifficulty });
         if (result.success) {
+            profile = result.profile;
             player.active = true;
             player.empireName = profile.username;
 
@@ -749,11 +761,13 @@ async function requestSpawn() {
         }
     } catch (e) {
         alert(e.message);
+    } finally {
+        hideLoading();
     }
 }
 
 async function requestSelfCollapse() {
-    if (!confirm('Execute operational abandonment sequence?')) return;
+    if (!confirm('Abandon current game?')) return;
     try {
         const res = await sendAction({ type: 'ABANDON' });
         if (res && res.success) {
@@ -765,7 +779,7 @@ async function requestSelfCollapse() {
                 world.controls().autoRotate = true;
                 world.pointOfView({ lat: 20, lng: 0, altitude: 2.5 }, 1000);
             }
-            alert('Operational abandonment sequence completed.');
+            alert('Game abandoned.');
             await pollMapState();
         }
     } catch (e) {
@@ -1067,6 +1081,38 @@ function setupSearch() {
                 });
             });
         });
+
+        searchInput.addEventListener('keydown', (ev) => {
+            if (ev.key === 'Enter') {
+                ev.preventDefault();
+                const queryClean = searchInput.value.trim().toUpperCase();
+                if (!queryClean) return;
+                let found = mapData.find(f => {
+                    const p = f.properties;
+                    return (p.ISO_A3 && p.ISO_A3.toUpperCase() === queryClean) ||
+                           (p.ADM0_A3 && p.ADM0_A3.toUpperCase() === queryClean) ||
+                           (p.SOV_A3 && p.SOV_A3.toUpperCase() === queryClean) ||
+                           (p.ISO_A2 && p.ISO_A2.toUpperCase() === queryClean) ||
+                           (p.POSTAL && p.POSTAL.toUpperCase() === queryClean) ||
+                           (p.ADMIN && p.ADMIN.toUpperCase() === queryClean) ||
+                           (p.NAME && p.NAME.toUpperCase() === queryClean);
+                });
+                if (!found) {
+                    found = mapData.find(f => {
+                        const p = f.properties;
+                        return (p.ADMIN && p.ADMIN.toUpperCase().includes(queryClean)) ||
+                               (p.NAME && p.NAME.toUpperCase().includes(queryClean)) ||
+                               (p.NAME_LONG && p.NAME_LONG.toUpperCase().includes(queryClean));
+                    });
+                }
+                if (found) {
+                    searchInput.value = found.properties.ADMIN;
+                    if (resultsDiv) resultsDiv.style.display = 'none';
+                    const centroid = getCentroid(found);
+                    if (world) world.pointOfView({ lat: centroid[1], lng: centroid[0], altitude: 1.2 }, 1200);
+                }
+            }
+        });
     }
 
     document.addEventListener('click', (e) => {
@@ -1110,9 +1156,9 @@ window.togglePauseGame = async () => {
 };
 
 window.promptSaveGame = async () => {
-    const title = prompt('Enter Operational Backup Title:');
+    const title = prompt('Enter Save Game Title:');
     if (!title) return;
-    const isCloud = confirm('Save to Secure Cloud Database?\n(Cancel for Local Browser Backup)');
+    const isCloud = confirm('Save to Cloud Database?\n(Cancel for Local Browser Storage)');
     
     try {
         if (isCloud) {
@@ -1123,7 +1169,7 @@ window.promptSaveGame = async () => {
             const res = await sendAction({ type: 'SAVE_GAME', title, isCloud: true });
             if (res && res.success) {
                 profile = res.profile;
-                alert('Operational backup successfully saved to Secure Cloud Database.');
+                alert('Game successfully saved to Cloud Database.');
                 window.renderSavesUI();
             }
         } else {
@@ -1136,7 +1182,7 @@ window.promptSaveGame = async () => {
                 }
                 localSaves.push(res.saveData);
                 localStorage.setItem('geo_local_saves', JSON.stringify(localSaves));
-                alert('Operational backup successfully saved to Local Browser Storage.');
+                alert('Game successfully saved to Local Storage.');
                 window.renderSavesUI();
             }
         }
@@ -1202,15 +1248,16 @@ window.renderSavesUI = () => {
 };
 
 window.loadSavedGame = async (id, isCloud) => {
-    if (!confirm('Restore simulation from this operational backup? This will overwrite the current simulation.')) return;
+    if (!confirm('Load this saved game? This will overwrite your current game.')) return;
     try {
+        showLoading('Loading Saved Game...');
         let res;
         if (isCloud) {
             res = await sendAction({ type: 'LOAD_GAME', saveId: id, isCloud: true });
         } else {
             let localSaves = JSON.parse(localStorage.getItem('geo_local_saves') || '[]');
             const saveData = localSaves.find(s => s.id === id);
-            if (!saveData) return alert('Backup data not found.');
+            if (!saveData) return alert('Save data not found.');
             res = await sendAction({ type: 'LOAD_GAME', saveData, isCloud: false });
         }
 
@@ -1225,16 +1272,18 @@ window.loadSavedGame = async (id, isCloud) => {
 
             if (world) world.controls().autoRotate = false;
 
-            alert('Operational backup successfully restored.');
+            alert('Game successfully loaded.');
             await pollMapState();
         }
     } catch (e) {
         alert(e.message);
+    } finally {
+        hideLoading();
     }
 };
 
 window.renameSavedGame = async (id, isCloud) => {
-    const newTitle = prompt('Enter New Backup Title:');
+    const newTitle = prompt('Enter New Title:');
     if (!newTitle) return;
 
     try {
@@ -1259,7 +1308,7 @@ window.renameSavedGame = async (id, isCloud) => {
 };
 
 window.deleteSavedGame = async (id, isCloud) => {
-    if (!confirm('Permanently delete this operational backup?')) return;
+    if (!confirm('Permanently delete this saved game?')) return;
 
     try {
         if (isCloud) {
