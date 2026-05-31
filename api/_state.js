@@ -135,26 +135,37 @@ export async function getState(playerId) {
     let state;
     if (useKV) {
         try {
-            const mapRes = await kvRequest('get', [`geo:map_data:${id}`]);
-            const tickRes = await kvRequest('get', [`geo:last_tick:${id}`]);
-            const eventsRes = await kvRequest('get', [`geo:active_events:${id}`]);
+            const stateRes = await kvRequest('get', [`geo:state:${id}`]);
             const dbRes = await kvRequest('get', ['geo:db']);
 
-            let mapData = mapRes.result ? JSON.parse(mapRes.result) : null;
-            let lastTick = tickRes.result ? parseInt(tickRes.result) : null;
-            let activeEvents = eventsRes.result ? JSON.parse(eventsRes.result) : [];
             let db = dbRes.result ? JSON.parse(dbRes.result) : {};
+            let gameState = stateRes.result ? JSON.parse(stateRes.result) : null;
 
-            if (!mapData) {
-                mapData = await loadOriginalMap();
-                lastTick = Date.now();
-                await kvSet(`geo:map_data:${id}`, JSON.stringify(mapData));
-                await kvSet(`geo:last_tick:${id}`, lastTick.toString());
-                await kvSet(`geo:active_events:${id}`, JSON.stringify(activeEvents));
-                await kvSet('geo:db', JSON.stringify(db));
+            if (!gameState) {
+                const mapData = await loadOriginalMap();
+                gameState = {
+                    mapData,
+                    lastTick: Date.now(),
+                    activeEvents: [],
+                    pendingActions: [],
+                    isPaused: false,
+                    difficulty: 'normal',
+                    version: 1
+                };
+                await kvSet(`geo:state:${id}`, gameState);
+                await kvSet('geo:db', db);
             }
 
-            state = { mapData, lastTick, activeEvents, db };
+            state = {
+                mapData: gameState.mapData,
+                lastTick: gameState.lastTick,
+                activeEvents: gameState.activeEvents,
+                pendingActions: gameState.pendingActions || [],
+                isPaused: !!gameState.isPaused,
+                difficulty: gameState.difficulty || 'normal',
+                version: gameState.version || 1,
+                db
+            };
         } catch (e) {
             console.error('KV Read Error, falling back to memory', e);
         }
@@ -174,7 +185,8 @@ export async function getState(playerId) {
                 lastTick: Date.now(),
                 activeEvents: [],
                 pendingActions: [],
-                isPaused: false
+                isPaused: false,
+                version: 1
             };
         }
         state = {
@@ -184,6 +196,7 @@ export async function getState(playerId) {
             pendingActions: inMemoryState.states[id].pendingActions,
             isPaused: inMemoryState.states[id].isPaused,
             difficulty: inMemoryState.states[id].difficulty,
+            version: inMemoryState.states[id].version || 1,
             db: inMemoryState.db
         };
     }
@@ -211,6 +224,8 @@ export async function getState(playerId) {
 
 export async function saveState(state, playerId) {
     const id = playerId || 'global';
+    state.version = (state.version || 0) + 1;
+
     if (playerId && state.db[playerId]) {
         await upsertProfile(state.db[playerId]);
     }
@@ -219,10 +234,17 @@ export async function saveState(state, playerId) {
 
     if (useKV) {
         try {
-            await kvSet(`geo:map_data:${id}`, JSON.stringify(state.mapData));
-            await kvSet(`geo:last_tick:${id}`, state.lastTick.toString());
-            await kvSet(`geo:active_events:${id}`, JSON.stringify(state.activeEvents));
-            await kvSet('geo:db', JSON.stringify(state.db));
+            const gameState = {
+                mapData: state.mapData,
+                lastTick: state.lastTick,
+                activeEvents: state.activeEvents,
+                pendingActions: state.pendingActions || [],
+                isPaused: !!state.isPaused,
+                difficulty: state.difficulty || 'normal',
+                version: state.version
+            };
+            await kvSet(`geo:state:${id}`, gameState);
+            await kvSet('geo:db', state.db);
             return;
         } catch (e) {
             console.error('KV Save Error', e);
@@ -236,7 +258,8 @@ export async function saveState(state, playerId) {
             activeEvents: state.activeEvents,
             pendingActions: state.pendingActions,
             isPaused: state.isPaused,
-            difficulty: state.difficulty
+            difficulty: state.difficulty,
+            version: state.version
         };
         inMemoryState.db = state.db;
     }

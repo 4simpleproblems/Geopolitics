@@ -99,7 +99,7 @@ export default async function handler(req, res) {
         profile.nukeUsed = false;
 
         await saveState(state, playerId);
-        return res.status(200).json({ success: true, country: targetFeature.properties.ADMIN, profile, mapState: getMapStateSummary(state) });
+        return res.status(200).json({ success: true, country: targetFeature.properties.ADMIN, profile, mapState: getMapStateSummary(state), version: state.version });
     }
 
     if (type === 'UNLOCK_SKILL') {
@@ -222,7 +222,7 @@ export default async function handler(req, res) {
             });
 
             await saveState(state, playerId);
-            return res.status(200).json({ success: true, message: 'Assault initiated.', profile, mapState: getMapStateSummary(state) });
+            return res.status(200).json({ success: true, message: 'Assault initiated.', profile, mapState: getMapStateSummary(state), version: state.version });
         }
 
         if (skillId === 'airstrike') {
@@ -242,7 +242,7 @@ export default async function handler(req, res) {
             });
 
             await saveState(state, playerId);
-            return res.status(200).json({ success: true, message: 'Airstrike successful. Enemy forces weakened.', profile, mapState: getMapStateSummary(state) });
+            return res.status(200).json({ success: true, message: 'Airstrike successful. Enemy forces weakened.', profile, mapState: getMapStateSummary(state), version: state.version });
         }
 
         if (skillId === 'nuke') {
@@ -312,9 +312,9 @@ export default async function handler(req, res) {
 
             await saveState(state, playerId);
             if (surrendered) {
-                return res.status(200).json({ success: true, message: `Surrender Confirmed: ${target} surrendered to your forces.`, profile, mapState: getMapStateSummary(state) });
+                return res.status(200).json({ success: true, message: `Surrender Confirmed: ${target} surrendered to your forces.`, profile, mapState: getMapStateSummary(state), version: state.version });
             }
-            return res.status(200).json({ success: true, message: 'Strategic nuke detonated. Radiation fallout detected.', profile, mapState: getMapStateSummary(state) });
+            return res.status(200).json({ success: true, message: 'Strategic nuke detonated. Radiation fallout detected.', profile, mapState: getMapStateSummary(state), version: state.version });
         }
 
         if (skillId === 'propaganda') {
@@ -336,21 +336,21 @@ export default async function handler(req, res) {
             });
 
             await saveState(state, playerId);
-            return res.status(200).json({ success: true, message: 'Propaganda successful. Converted enemy forces.', profile, mapState: getMapStateSummary(state) });
+            return res.status(200).json({ success: true, message: 'Propaganda successful. Converted enemy forces.', profile, mapState: getMapStateSummary(state), version: state.version });
         }
 
         if (skillId === 'intelHack') {
             targetFeature.properties.gameStats.intelHackedUntil = Date.now() + 45000;
 
             await saveState(state, playerId);
-            return res.status(200).json({ success: true, message: 'Systems hacked. Defense threshold temporarily reduced.', profile, mapState: getMapStateSummary(state) });
+            return res.status(200).json({ success: true, message: 'Systems hacked. Defense threshold temporarily reduced.', profile, mapState: getMapStateSummary(state), version: state.version });
         }
 
         if (skillId === 'logistics') {
             profile.logisticsBoostUntil = Date.now() + 30000;
 
             await saveState(state, playerId);
-            return res.status(200).json({ success: true, message: 'Logistics boost activated. Production tripled.', profile, mapState: getMapStateSummary(state) });
+            return res.status(200).json({ success: true, message: 'Logistics boost activated. Production tripled.', profile, mapState: getMapStateSummary(state), version: state.version });
         }
 
         return res.status(400).json({ error: 'Invalid skill action' });
@@ -363,7 +363,7 @@ export default async function handler(req, res) {
 
         profile.selectedColor = color;
         await saveState(state, playerId);
-        return res.status(200).json({ success: true, profile, mapState: getMapStateSummary(state) });
+        return res.status(200).json({ success: true, profile, mapState: getMapStateSummary(state), version: state.version });
     }
 
     if (type === 'ABANDON') {
@@ -413,7 +413,7 @@ export default async function handler(req, res) {
         });
 
         await saveState(state, playerId);
-        return res.status(200).json({ success: true, collapsed: true, mapState: getMapStateSummary(state) });
+        return res.status(200).json({ success: true, collapsed: true, mapState: getMapStateSummary(state), version: state.version });
     }
 
     if (type === 'SAVE_GAME') {
@@ -459,7 +459,7 @@ export default async function handler(req, res) {
         state.isPaused = false;
         profile.activeGame = true;
         await saveState(state, playerId);
-        return res.status(200).json({ success: true, profile, mapState: getMapStateSummary(state) });
+        return res.status(200).json({ success: true, profile, mapState: getMapStateSummary(state), version: state.version });
     }
 
     if (type === 'DELETE_CLOUD_SAVE') {
@@ -494,7 +494,7 @@ export default async function handler(req, res) {
         });
 
         await saveState(state, playerId);
-        return res.status(200).json({ success: true, profile, mapState: getMapStateSummary(state) });
+        return res.status(200).json({ success: true, profile, mapState: getMapStateSummary(state), version: state.version });
     }
 
     if (type === 'TOGGLE_PAUSE') {

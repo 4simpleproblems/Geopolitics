@@ -25,6 +25,15 @@ let lastCtxTarget = null;
 let processedEventIds = new Set();
 let pollInterval = null;
 let isInitComplete = false;
+let gameIsPaused = false;
+let clientStateVersion = 0;
+let hudAnimation = {
+    currentPop: 0,
+    currentMil: 0,
+    targetPop: 0,
+    targetMil: 0,
+    active: false
+};
 
 let playerId = localStorage.getItem('geo_player_id');
 if (!playerId) {
@@ -605,6 +614,15 @@ async function pollMapState() {
         if (!res.ok) return;
 
         const data = await res.json();
+        if (data.version !== undefined) {
+            if (data.version < clientStateVersion) {
+                return;
+            }
+            clientStateVersion = data.version;
+        }
+
+        gameIsPaused = !!data.isPaused;
+
         if (data.welcomeProfile) {
             profile = data.welcomeProfile;
             document.getElementById('player-tokens-val').innerText = profile.tokens;
@@ -759,6 +777,12 @@ async function sendAction(payload) {
         }
         const data = await res.json();
         if (data.success) {
+            if (data.version !== undefined) {
+                clientStateVersion = data.version;
+            }
+            if (data.isPaused !== undefined) {
+                gameIsPaused = !!data.isPaused;
+            }
             if (data.profile) {
                 profile = data.profile;
                 const tokensVal = document.getElementById('player-tokens-val');
@@ -974,6 +998,55 @@ async function handleContextAction(action) {
     }
 }
 
+function animateHUDNumbers() {
+    if (!player.active) {
+        hudAnimation.active = false;
+        return;
+    }
+
+    const popEl = document.getElementById('hud-pop');
+    const milEl = document.getElementById('hud-mil');
+
+    if (!gameIsPaused && profile && mapData.length > 0) {
+        const playerLands = mapData.filter(f => f.properties.owner === profile.username);
+        if (playerLands.length > 0) {
+            let growthRatePerSec = 0.015 / 2;
+            if (profile.logisticsBoostUntil && profile.logisticsBoostUntil > Date.now()) {
+                growthRatePerSec = (0.015 + 0.035) / 2;
+            } else if (profile.skills && profile.skills.logistics) {
+                growthRatePerSec = (0.015 + 0.01) / 2;
+            }
+
+            const currentTotalMil = hudAnimation.currentMil;
+            const growthPerSec = currentTotalMil * growthRatePerSec + (playerLands.length * 50);
+            const growthPerFrame = growthPerSec / 60;
+
+            hudAnimation.targetMil += growthPerFrame;
+            hudAnimation.currentMil += growthPerFrame;
+        }
+    }
+
+    const diffPop = hudAnimation.targetPop - hudAnimation.currentPop;
+    const diffMil = hudAnimation.targetMil - hudAnimation.currentMil;
+
+    if (Math.abs(diffPop) > 1) {
+        hudAnimation.currentPop += diffPop * 0.08;
+    } else {
+        hudAnimation.currentPop = hudAnimation.targetPop;
+    }
+
+    if (Math.abs(diffMil) > 1) {
+        hudAnimation.currentMil += diffMil * 0.08;
+    } else {
+        hudAnimation.currentMil = hudAnimation.targetMil;
+    }
+
+    if (popEl) popEl.innerText = formatNum(Math.round(hudAnimation.currentPop));
+    if (milEl) milEl.innerText = formatNum(Math.round(hudAnimation.currentMil));
+
+    requestAnimationFrame(animateHUDNumbers);
+}
+
 function updateActiveHUD() {
     if (!player.active || !profile) return;
     const playerLands = mapData.filter(f => f.properties.owner === profile.username);
@@ -983,13 +1056,19 @@ function updateActiveHUD() {
 
     const empireEl = document.getElementById('hud-empire');
     const conqueredEl = document.getElementById('hud-conquered');
-    const popEl = document.getElementById('hud-pop');
-    const milEl = document.getElementById('hud-mil');
 
     if (empireEl) empireEl.innerText = profile.username;
     if (conqueredEl) conqueredEl.innerText = conqueredCount;
-    if (popEl) popEl.innerText = formatNum(totalPop);
-    if (milEl) milEl.innerText = formatNum(totalMil);
+
+    hudAnimation.targetPop = totalPop;
+    hudAnimation.targetMil = totalMil;
+
+    if (!hudAnimation.active) {
+        hudAnimation.currentPop = totalPop;
+        hudAnimation.currentMil = totalMil;
+        hudAnimation.active = true;
+        animateHUDNumbers();
+    }
 }
 
 function updateLeaderboardUI(leaderboard) {

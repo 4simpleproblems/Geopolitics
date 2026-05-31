@@ -164,7 +164,8 @@ export default async function handler(req, res) {
         activeEvents: state.activeEvents,
         welcomeProfile,
         isPaused: !!state.isPaused,
-        difficulty: state.difficulty || 'normal'
+        difficulty: state.difficulty || 'normal',
+        version: state.version || 1
     });
 }
 
