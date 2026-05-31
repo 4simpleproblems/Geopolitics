@@ -22,7 +22,7 @@ export default async function handler(req, res) {
         return res.status(405).json({ error: 'Method not allowed' });
     }
 
-    const { playerId, type, target, skill, color } = req.body;
+    const { playerId, type, target, skill, color, difficulty, saveId, newTitle, saveData } = req.body;
     if (!playerId) {
         return res.status(400).json({ error: 'Player ID required' });
     }
@@ -58,6 +58,8 @@ export default async function handler(req, res) {
         targetFeature.properties.owner = profile.username;
 
         profile.stats.peakMilitary = Math.max(profile.stats.peakMilitary, targetFeature.properties.gameStats.mil);
+        state.difficulty = difficulty || 'normal';
+        profile.activeGame = true;
 
         await saveState(state, playerId);
         return res.status(200).json({ success: true, country: targetFeature.properties.ADMIN });
@@ -191,9 +193,14 @@ export default async function handler(req, res) {
         const finalTerritories = playerLands.length;
         const finalPeakMil = playerLands.reduce((sum, f) => sum + f.properties.gameStats.mil, 0);
 
-        const tokensAwarded = Math.floor(finalTerritories * 4 + finalPeakMil / 15000);
+        let multiplier = 1.0;
+        if (state.difficulty === 'easy') multiplier = 0.5;
+        if (state.difficulty === 'hard') multiplier = 2.0;
+
+        const tokensAwarded = Math.floor((finalTerritories * 4 + finalPeakMil / 15000) * multiplier);
         profile.tokens += tokensAwarded;
         profile.stats.survived++;
+        profile.activeGame = false;
 
         if (finalPeakMil > profile.stats.peakMilitary) {
             profile.stats.peakMilitary = finalPeakMil;
@@ -226,6 +233,75 @@ export default async function handler(req, res) {
 
         await saveState(state, playerId);
         return res.status(200).json({ success: true, collapsed: true });
+    }
+
+    if (type === 'SAVE_GAME') {
+        const title = req.body.title || 'Untitled Save';
+        const isCloud = req.body.isCloud;
+        const newSave = {
+            id: 'save_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+            title,
+            timestamp: Date.now(),
+            mapData: state.mapData,
+            pendingActions: state.pendingActions || [],
+            activeEvents: state.activeEvents || [],
+            difficulty: state.difficulty || 'normal'
+        };
+        if (isCloud) {
+            if (!profile.saves) profile.saves = [];
+            if (profile.saves.length >= 5) {
+                return res.status(400).json({ error: 'Maximum 5 cloud saves reached.' });
+            }
+            profile.saves.push(newSave);
+            await saveState(state, playerId);
+            return res.status(200).json({ success: true, profile });
+        } else {
+            return res.status(200).json({ success: true, saveData: newSave });
+        }
+    }
+
+    if (type === 'LOAD_GAME') {
+        let loadedData = null;
+        if (req.body.isCloud) {
+            if (!profile.saves) profile.saves = [];
+            loadedData = profile.saves.find(s => s.id === saveId);
+            if (!loadedData) return res.status(404).json({ error: 'Cloud save not found.' });
+        } else {
+            loadedData = saveData;
+            if (!loadedData) return res.status(400).json({ error: 'Save data required.' });
+        }
+        state.mapData = loadedData.mapData;
+        state.lastTick = Date.now();
+        state.pendingActions = loadedData.pendingActions || [];
+        state.activeEvents = loadedData.activeEvents || [];
+        state.difficulty = loadedData.difficulty || 'normal';
+        state.isPaused = false;
+        profile.activeGame = true;
+        await saveState(state, playerId);
+        return res.status(200).json({ success: true, profile });
+    }
+
+    if (type === 'DELETE_CLOUD_SAVE') {
+        if (!profile.saves) profile.saves = [];
+        profile.saves = profile.saves.filter(s => s.id !== saveId);
+        await saveState(state, playerId);
+        return res.status(200).json({ success: true, profile });
+    }
+
+    if (type === 'RENAME_CLOUD_SAVE') {
+        if (!profile.saves) profile.saves = [];
+        const save = profile.saves.find(s => s.id === saveId);
+        if (save) {
+            save.title = newTitle || 'Untitled Save';
+            await saveState(state, playerId);
+        }
+        return res.status(200).json({ success: true, profile });
+    }
+
+    if (type === 'TOGGLE_PAUSE') {
+        state.isPaused = !state.isPaused;
+        await saveState(state, playerId);
+        return res.status(200).json({ success: true, isPaused: state.isPaused });
     }
 
     return res.status(400).json({ error: 'Invalid action type' });

@@ -66,7 +66,8 @@ function rowToProfile(row) {
         skills: row.skills || { logistics: 0, tacticalParity: 0, economicHeadstart: 0 },
         stats: row.stats || { territoriesAnnexed: 0, peakMilitary: 0, wins: 0, survived: 0 },
         unlockedColors: row.unlocked_colors || ['#0070f3'],
-        selectedColor: row.selected_color || '#0070f3'
+        selectedColor: row.selected_color || '#0070f3',
+        saves: row.saves || []
     };
 }
 
@@ -80,6 +81,7 @@ function profileToRow(profile) {
         stats: profile.stats || { territoriesAnnexed: 0, peakMilitary: 0, wins: 0, survived: 0 },
         unlocked_colors: profile.unlockedColors || ['#0070f3'],
         selected_color: profile.selectedColor || '#0070f3',
+        saves: profile.saves || [],
         updated_at: new Date().toISOString()
     };
 }

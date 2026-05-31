@@ -23,106 +23,124 @@ export default async function handler(req, res) {
 
     const now = Date.now();
 
-    if (state.pendingActions && state.pendingActions.length > 0) {
-        const actionsToResolve = state.pendingActions.filter(a => a.resolveTime <= now);
-        state.pendingActions = state.pendingActions.filter(a => a.resolveTime > now);
+    if (state.isPaused) {
+        state.lastTick = now;
+        state.activeEvents = state.activeEvents.filter(e => e.timestamp + e.duration > now);
+        await saveState(state, playerId);
+    } else {
+        if (state.pendingActions && state.pendingActions.length > 0) {
+            const actionsToResolve = state.pendingActions.filter(a => a.resolveTime <= now);
+            state.pendingActions = state.pendingActions.filter(a => a.resolveTime > now);
 
-        actionsToResolve.forEach(action => {
-            resolvePendingAction(state, action);
-        });
-    }
-
-    const elapsed = now - state.lastTick;
-    const ticks = Math.floor(elapsed / 2000);
-
-    if (ticks > 0) {
-        const playersList = Object.values(state.db);
-
-        for (let t = 0; t < ticks; t++) {
-            state.mapData.forEach(f => {
-                let growthRate = 0.003;
-                const owner = f.properties.owner;
-                const ownerProfile = playersList.find(p => p.username === owner);
-
-                if (ownerProfile) {
-                    const logisticsLvl = ownerProfile.skills.logistics || 0;
-                    growthRate += logisticsLvl * 0.001;
-                }
-
-                f.properties.gameStats.mil += Math.floor(f.properties.gameStats.pop * growthRate);
-
-                if (ownerProfile) {
-                    const totalMil = state.mapData.filter(x => x.properties.owner === owner)
-                        .reduce((sum, x) => sum + x.properties.gameStats.mil, 0);
-                    if (totalMil > ownerProfile.stats.peakMilitary) {
-                        ownerProfile.stats.peakMilitary = totalMil;
-                    }
-                }
+            actionsToResolve.forEach(action => {
+                resolvePendingAction(state, action);
             });
-
-            const uniqueOwners = [...new Set(state.mapData.map(f => f.properties.owner))];
-
-            uniqueOwners.forEach(emp => {
-                const isHuman = playersList.some(p => p.username === emp);
-                if (isHuman) return;
-
-                const myLands = state.mapData.filter(f => f.properties.owner === emp);
-                if (myLands.length === 0) return;
-
-                let potentialTargets = [];
-                myLands.forEach(land => {
-                    land.properties.neighbors.forEach(nName => {
-                        const nNode = state.mapData.find(f => f.properties.ADMIN === nName);
-                        if (nNode && nNode.properties.owner !== emp) {
-                            potentialTargets.push(nNode);
-                        }
-                    });
-                });
-
-                if (potentialTargets.length === 0) return;
-
-                let target = potentialTargets[Math.floor(Math.random() * potentialTargets.length)];
-
-                const playerNames = playersList.map(p => p.username);
-                const playerTargets = potentialTargets.filter(t => playerNames.includes(t.properties.owner));
-                if (playerTargets.length > 0) {
-                    target = playerTargets[Math.floor(Math.random() * playerTargets.length)];
-                }
-
-                const totalMil = myLands.reduce((sum, f) => sum + f.properties.gameStats.mil, 0);
-                const targetMil = target.properties.gameStats.mil;
-
-                if (totalMil > targetMil * 1.5 && targetMil < totalMil * 0.6) {
-                    const duration = 2000 + (targetMil / 50000) * 1000;
-                    const eventId = `ai_inv_${emp}_${target.properties.ADMIN}_${Date.now()}`;
-
-                    if (state.activeEvents.some(e => e.id === eventId)) return;
-
-                    target.properties.owner = emp;
-                    target.properties.gameStats.mil = Math.floor(totalMil * 0.05);
-                    myLands.forEach(f => f.properties.gameStats.mil = Math.floor(f.properties.gameStats.mil * 0.9));
-
-                    state.activeEvents.push({
-                        id: eventId,
-                        type: 'INVASION_START',
-                        attacker: emp,
-                        target: target.properties.ADMIN,
-                        invadeType: 'border',
-                        duration,
-                        startCoords: getCentroid(myLands[0]),
-                        endCoords: getCentroid(target),
-                        color: null,
-                        timestamp: Date.now()
-                    });
-                }
-            });
-
-            checkPlayerCollapses(state);
         }
 
-        state.activeEvents = state.activeEvents.filter(e => e.timestamp + e.duration > now);
-        state.lastTick = state.lastTick + (ticks * 2000);
-        await saveState(state, playerId);
+        const elapsed = now - state.lastTick;
+        const ticks = Math.floor(elapsed / 2000);
+
+        if (ticks > 0) {
+            const playersList = Object.values(state.db);
+
+            for (let t = 0; t < ticks; t++) {
+                state.mapData.forEach(f => {
+                    let growthRate = 0.003;
+                    const owner = f.properties.owner;
+                    const ownerProfile = playersList.find(p => p.username === owner);
+
+                    if (ownerProfile) {
+                        const logisticsLvl = ownerProfile.skills.logistics || 0;
+                        growthRate += logisticsLvl * 0.001;
+                    }
+
+                    f.properties.gameStats.mil += Math.floor(f.properties.gameStats.pop * growthRate);
+
+                    if (ownerProfile) {
+                        const totalMil = state.mapData.filter(x => x.properties.owner === owner)
+                            .reduce((sum, x) => sum + x.properties.gameStats.mil, 0);
+                        if (totalMil > ownerProfile.stats.peakMilitary) {
+                            ownerProfile.stats.peakMilitary = totalMil;
+                        }
+                    }
+                });
+
+                const uniqueOwners = [...new Set(state.mapData.map(f => f.properties.owner))];
+
+                uniqueOwners.forEach(emp => {
+                    const isHuman = playersList.some(p => p.username === emp);
+                    if (isHuman) return;
+
+                    const myLands = state.mapData.filter(f => f.properties.owner === emp);
+                    if (myLands.length === 0) return;
+
+                    let potentialTargets = [];
+                    myLands.forEach(land => {
+                        land.properties.neighbors.forEach(nName => {
+                            const nNode = state.mapData.find(f => f.properties.ADMIN === nName);
+                            if (nNode && nNode.properties.owner !== emp) {
+                                potentialTargets.push(nNode);
+                            }
+                        });
+                    });
+
+                    if (potentialTargets.length === 0) return;
+
+                    let target = potentialTargets[Math.floor(Math.random() * potentialTargets.length)];
+
+                    const playerNames = playersList.map(p => p.username);
+                    const playerTargets = potentialTargets.filter(t => playerNames.includes(t.properties.owner));
+                    if (playerTargets.length > 0) {
+                        target = playerTargets[Math.floor(Math.random() * playerTargets.length)];
+                    }
+
+                    let diffThresholdFactor = 1.5;
+                    let attackChance = 0.6;
+                    if (state.difficulty === 'easy') {
+                        diffThresholdFactor = 2.0;
+                        attackChance = 0.3;
+                    } else if (state.difficulty === 'hard') {
+                        diffThresholdFactor = 1.1;
+                        attackChance = 1.0;
+                    }
+
+                    if (Math.random() > attackChance) return;
+
+                    const totalMil = myLands.reduce((sum, f) => sum + f.properties.gameStats.mil, 0);
+                    const targetMil = target.properties.gameStats.mil;
+
+                    if (totalMil > targetMil * diffThresholdFactor && targetMil < totalMil * 0.6) {
+                        const duration = 2000 + (targetMil / 50000) * 1000;
+                        const eventId = `ai_inv_${emp}_${target.properties.ADMIN}_${Date.now()}`;
+
+                        if (state.activeEvents.some(e => e.id === eventId)) return;
+
+                        target.properties.owner = emp;
+                        target.properties.gameStats.mil = Math.floor(totalMil * 0.05);
+                        myLands.forEach(f => f.properties.gameStats.mil = Math.floor(f.properties.gameStats.mil * 0.9));
+
+                        state.activeEvents.push({
+                            id: eventId,
+                            type: 'INVASION_START',
+                            attacker: emp,
+                            target: target.properties.ADMIN,
+                            invadeType: 'border',
+                            duration,
+                            startCoords: getCentroid(myLands[0]),
+                            endCoords: getCentroid(target),
+                            color: null,
+                            timestamp: Date.now()
+                        });
+                    }
+                });
+
+                checkPlayerCollapses(state);
+            }
+
+            state.activeEvents = state.activeEvents.filter(e => e.timestamp + e.duration > now);
+            state.lastTick = state.lastTick + (ticks * 2000);
+            await saveState(state, playerId);
+        }
     }
 
     const leaderboard = getLeaderboard(state);
@@ -132,22 +150,30 @@ export default async function handler(req, res) {
         mapState: getMapStateSummary(state),
         leaderboard,
         activeEvents: state.activeEvents,
-        welcomeProfile
+        welcomeProfile,
+        isPaused: !!state.isPaused,
+        difficulty: state.difficulty || 'normal'
     });
 }
 
 function checkPlayerCollapses(state) {
     const playersList = Object.values(state.db);
     playersList.forEach(profile => {
+        if (!profile.activeGame) return;
         const ownedCount = state.mapData.filter(f => f.properties.owner === profile.username).length;
-        if (ownedCount === 0 && profile.stats.survived < profile.stats.wins + 1) {
+        if (ownedCount === 0) {
             handlePlayerCollapse(state, profile);
         }
     });
 }
 
 function handlePlayerCollapse(state, profile) {
-    const tokensAwarded = 5; 
+    profile.activeGame = false;
+    let multiplier = 1.0;
+    if (state.difficulty === 'easy') multiplier = 0.5;
+    if (state.difficulty === 'hard') multiplier = 2.0;
+
+    const tokensAwarded = Math.floor(5 * multiplier);
     profile.tokens += tokensAwarded;
     profile.stats.survived++;
 
@@ -268,7 +294,12 @@ function checkWinCondition(state, profile) {
     const pct = ownedCount / totalSectors;
 
     if (pct >= 0.7) {
-        const bonusTokens = 50;
+        profile.activeGame = false;
+        let multiplier = 1.0;
+        if (state.difficulty === 'easy') multiplier = 0.5;
+        if (state.difficulty === 'hard') multiplier = 2.0;
+
+        const bonusTokens = Math.floor(50 * multiplier);
         profile.tokens += bonusTokens;
         profile.stats.wins++;
 

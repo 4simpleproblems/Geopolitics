@@ -29,7 +29,9 @@ export default async function handler(req, res) {
                 economicHeadstart: 0
             },
             unlockedColors: ['#0070f3'],
-            selectedColor: '#0070f3'
+            selectedColor: '#0070f3',
+            saves: [],
+            activeGame: false
         };
     } else if (username) {
         state.db[playerId].username = username;

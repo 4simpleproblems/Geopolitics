@@ -566,6 +566,12 @@ async function pollMapState() {
             updateCommandHubUI();
         }
 
+        const pauseBtn = document.getElementById('btn-pause-game');
+        if (pauseBtn) {
+            pauseBtn.innerHTML = data.isPaused ? '<i class="fa-solid fa-play"></i>' : '<i class="fa-solid fa-pause"></i>';
+            pauseBtn.title = data.isPaused ? 'Resume Game' : 'Pause Game';
+        }
+
         applyMapState(data.mapState);
         updateLeaderboardUI(data.leaderboard);
         processActiveEvents(data.activeEvents);
@@ -722,7 +728,7 @@ async function requestSpawn() {
     }
 
     try {
-        const result = await sendAction({ type: 'SPAWN', target: query });
+        const result = await sendAction({ type: 'SPAWN', target: query, difficulty: selectedDifficulty });
         if (result.success) {
             player.active = true;
             player.empireName = profile.username;
@@ -749,9 +755,22 @@ async function requestSpawn() {
 async function requestSelfCollapse() {
     if (!confirm('Execute operational abandonment sequence?')) return;
     try {
-        await sendAction({ type: 'ABANDON' });
-        await pollMapState();
-    } catch (e) {}
+        const res = await sendAction({ type: 'ABANDON' });
+        if (res && res.success) {
+            player.active = false;
+            document.getElementById('active-hud').style.display = 'none';
+            document.getElementById('saas-header').style.display = 'flex';
+            document.getElementById('dashboard-overlay').style.display = 'flex';
+            if (world) {
+                world.controls().autoRotate = true;
+                world.pointOfView({ lat: 20, lng: 0, altitude: 2.5 }, 1000);
+            }
+            alert('Operational abandonment sequence completed.');
+            await pollMapState();
+        }
+    } catch (e) {
+        alert(e.message);
+    }
 }
 
 async function upgradeSkill(skill) {
@@ -798,6 +817,7 @@ async function handlePolygonClick(d) {
 function showCtxMenu(d, e) {
     if (!player.active) return;
     if (d.properties.owner === profile.username) return;
+    if (e && e.preventDefault) e.preventDefault();
 
     const menu = document.getElementById('ctx-menu');
     if (menu) {
@@ -838,11 +858,17 @@ function updateActiveHUD() {
     const playerLands = mapData.filter(f => f.properties.owner === profile.username);
     const totalPop = playerLands.reduce((sum, f) => sum + f.properties.gameStats.pop, 0);
     const totalMil = playerLands.reduce((sum, f) => sum + f.properties.gameStats.mil, 0);
+    const conqueredCount = Math.max(0, playerLands.length - 1);
 
-    document.getElementById('hud-empire').innerText = profile.username;
-    document.getElementById('hud-sectors').innerText = playerLands.length;
-    document.getElementById('hud-pop').innerText = formatNum(totalPop);
-    document.getElementById('hud-mil').innerText = formatNum(totalMil);
+    const empireEl = document.getElementById('hud-empire');
+    const conqueredEl = document.getElementById('hud-conquered');
+    const popEl = document.getElementById('hud-pop');
+    const milEl = document.getElementById('hud-mil');
+
+    if (empireEl) empireEl.innerText = profile.username;
+    if (conqueredEl) conqueredEl.innerText = conqueredCount;
+    if (popEl) popEl.innerText = formatNum(totalPop);
+    if (milEl) milEl.innerText = formatNum(totalMil);
 }
 
 function updateLeaderboardUI(leaderboard) {
@@ -969,6 +995,9 @@ function updateCommandHubUI() {
             });
         });
     }
+    if (window.renderSavesUI) {
+        window.renderSavesUI();
+    }
 }
 
 function createTooltip(d) {
@@ -1000,6 +1029,9 @@ function setupTabs() {
             btn.classList.add('active');
             const tabId = btn.getAttribute('data-tab');
             document.getElementById(`tab-${tabId}`).classList.add('active');
+            if (tabId === 'saves' && window.renderSavesUI) {
+                window.renderSavesUI();
+            }
         });
     });
 }
@@ -1050,3 +1082,213 @@ function logMsg(msg) {
 }
 
 init();
+
+let selectedDifficulty = 'normal';
+
+window.setDifficulty = (diff) => {
+    selectedDifficulty = diff;
+    document.querySelectorAll('#tab-deploy .toggle-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    const activeBtn = document.getElementById(`diff-${diff}`);
+    if (activeBtn) activeBtn.classList.add('active');
+};
+
+window.togglePauseGame = async () => {
+    try {
+        const res = await sendAction({ type: 'TOGGLE_PAUSE' });
+        if (res && res.success) {
+            const isPaused = res.isPaused;
+            const pauseBtn = document.getElementById('btn-pause-game');
+            if (pauseBtn) {
+                pauseBtn.innerHTML = isPaused ? '<i class="fa-solid fa-play"></i>' : '<i class="fa-solid fa-pause"></i>';
+                pauseBtn.title = isPaused ? 'Resume Game' : 'Pause Game';
+            }
+            logMsg(isPaused ? 'Game Simulation Paused.' : 'Game Simulation Resumed.');
+        }
+    } catch (e) {}
+};
+
+window.promptSaveGame = async () => {
+    const title = prompt('Enter Operational Backup Title:');
+    if (!title) return;
+    const isCloud = confirm('Save to Secure Cloud Database?\n(Cancel for Local Browser Backup)');
+    
+    try {
+        if (isCloud) {
+            if (profile.saves && profile.saves.length >= 5) {
+                alert('Error: Maximum 5 Cloud saves reached. Delete an existing save to make room.');
+                return;
+            }
+            const res = await sendAction({ type: 'SAVE_GAME', title, isCloud: true });
+            if (res && res.success) {
+                profile = res.profile;
+                alert('Operational backup successfully saved to Secure Cloud Database.');
+                window.renderSavesUI();
+            }
+        } else {
+            const res = await sendAction({ type: 'SAVE_GAME', title, isCloud: false });
+            if (res && res.success && res.saveData) {
+                let localSaves = JSON.parse(localStorage.getItem('geo_local_saves') || '[]');
+                if (localSaves.length >= 50) {
+                    alert('Error: Maximum 50 Local saves reached. Delete an existing save to make room.');
+                    return;
+                }
+                localSaves.push(res.saveData);
+                localStorage.setItem('geo_local_saves', JSON.stringify(localSaves));
+                alert('Operational backup successfully saved to Local Browser Storage.');
+                window.renderSavesUI();
+            }
+        }
+    } catch (e) {
+        alert(e.message);
+    }
+};
+
+window.renderSavesUI = () => {
+    if (!profile) return;
+    const searchVal = (document.getElementById('save-search')?.value || '').toLowerCase();
+    const sortBy = document.getElementById('save-sort')?.value || 'recent';
+
+    let localSaves = JSON.parse(localStorage.getItem('geo_local_saves') || '[]');
+    let cloudSaves = profile.saves || [];
+
+    const localCount = document.getElementById('local-saves-count');
+    const cloudCount = document.getElementById('cloud-saves-count');
+    if (localCount) localCount.innerText = localSaves.length;
+    if (cloudCount) cloudCount.innerText = cloudSaves.length;
+
+    const processSavesList = (list) => {
+        let filtered = list.filter(s => s.title.toLowerCase().includes(searchVal));
+        if (sortBy === 'recent') {
+            filtered.sort((a, b) => b.timestamp - a.timestamp);
+        } else if (sortBy === 'oldest') {
+            filtered.sort((a, b) => a.timestamp - b.timestamp);
+        } else if (sortBy === 'alpha') {
+            filtered.sort((a, b) => a.title.localeCompare(b.title));
+        }
+        return filtered;
+    };
+
+    const processedLocal = processSavesList(localSaves);
+    const processedCloud = processSavesList(cloudSaves);
+
+    const renderList = (saves, isCloudList) => {
+        if (saves.length === 0) {
+            return '<div style="color:var(--text-secondary); font-size:0.75rem; text-align:center; padding:20px;">No operational backups detected.</div>';
+        }
+        return saves.map(s => `
+            <div class="save-card">
+                <div class="save-info">
+                    <div class="save-title">${s.title}</div>
+                    <div class="save-meta">
+                        <span>${new Date(s.timestamp).toLocaleString()}</span>
+                        <span class="save-difficulty ${s.difficulty}">${s.difficulty}</span>
+                    </div>
+                </div>
+                <div class="save-actions">
+                    <button class="btn-load-save" onclick="window.loadSavedGame('${s.id}', ${isCloudList})" title="Restore Backup"><i class="fa-solid fa-play"></i></button>
+                    <button onclick="window.renameSavedGame('${s.id}', ${isCloudList})" title="Rename Backup"><i class="fa-solid fa-pen"></i></button>
+                    <button class="btn-delete-save" onclick="window.deleteSavedGame('${s.id}', ${isCloudList})" title="Delete Backup"><i class="fa-solid fa-trash"></i></button>
+                </div>
+            </div>
+        `).join('');
+    };
+
+    const localListEl = document.getElementById('local-saves-list');
+    const cloudListEl = document.getElementById('cloud-saves-list');
+    if (localListEl) localListEl.innerHTML = renderList(processedLocal, false);
+    if (cloudListEl) cloudListEl.innerHTML = renderList(processedCloud, true);
+};
+
+window.loadSavedGame = async (id, isCloud) => {
+    if (!confirm('Restore simulation from this operational backup? This will overwrite the current simulation.')) return;
+    try {
+        let res;
+        if (isCloud) {
+            res = await sendAction({ type: 'LOAD_GAME', saveId: id, isCloud: true });
+        } else {
+            let localSaves = JSON.parse(localStorage.getItem('geo_local_saves') || '[]');
+            const saveData = localSaves.find(s => s.id === id);
+            if (!saveData) return alert('Backup data not found.');
+            res = await sendAction({ type: 'LOAD_GAME', saveData, isCloud: false });
+        }
+
+        if (res && res.success) {
+            profile = res.profile;
+            player.active = true;
+            player.empireName = profile.username;
+
+            document.getElementById('dashboard-overlay').style.display = 'none';
+            document.getElementById('saas-header').style.display = 'none';
+            document.getElementById('active-hud').style.display = 'block';
+
+            if (world) world.controls().autoRotate = false;
+
+            alert('Operational backup successfully restored.');
+            await pollMapState();
+        }
+    } catch (e) {
+        alert(e.message);
+    }
+};
+
+window.renameSavedGame = async (id, isCloud) => {
+    const newTitle = prompt('Enter New Backup Title:');
+    if (!newTitle) return;
+
+    try {
+        if (isCloud) {
+            const res = await sendAction({ type: 'RENAME_CLOUD_SAVE', saveId: id, newTitle });
+            if (res && res.success) {
+                profile = res.profile;
+                window.renderSavesUI();
+            }
+        } else {
+            let localSaves = JSON.parse(localStorage.getItem('geo_local_saves') || '[]');
+            const save = localSaves.find(s => s.id === id);
+            if (save) {
+                save.title = newTitle;
+                localStorage.setItem('geo_local_saves', JSON.stringify(localSaves));
+                window.renderSavesUI();
+            }
+        }
+    } catch (e) {
+        alert(e.message);
+    }
+};
+
+window.deleteSavedGame = async (id, isCloud) => {
+    if (!confirm('Permanently delete this operational backup?')) return;
+
+    try {
+        if (isCloud) {
+            const res = await sendAction({ type: 'DELETE_CLOUD_SAVE', saveId: id });
+            if (res && res.success) {
+                profile = res.profile;
+                window.renderSavesUI();
+            }
+        } else {
+            let localSaves = JSON.parse(localStorage.getItem('geo_local_saves') || '[]');
+            localSaves = localSaves.filter(s => s.id !== id);
+            localStorage.setItem('geo_local_saves', JSON.stringify(localSaves));
+            window.renderSavesUI();
+        }
+    } catch (e) {
+        alert(e.message);
+    }
+};
+
+document.addEventListener('contextmenu', (e) => {
+    if (player.active) {
+        e.preventDefault();
+    }
+});
+
+setInterval(() => {
+    const dateEl = document.getElementById('console-time-date');
+    if (dateEl) {
+        const now = new Date();
+        dateEl.innerText = now.toLocaleString();
+    }
+}, 1000);
