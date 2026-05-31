@@ -1,5 +1,21 @@
 import { getState, saveState, loadOriginalMap } from './_state.js';
 
+function getOwnerColor(state, ownerName) {
+    const playersList = Object.values(state.db);
+    const owner = playersList.find(p => p.username === ownerName);
+    return owner ? owner.selectedColor : null;
+}
+
+function getMapStateSummary(state) {
+    return state.mapData.map(f => ({
+        admin: f.properties.ADMIN,
+        owner: f.properties.owner,
+        pop: f.properties.gameStats.pop,
+        mil: f.properties.gameStats.mil,
+        color: getOwnerColor(state, f.properties.owner)
+    }));
+}
+
 function getCentroid(feature) {
     if (feature.geometry && feature.geometry.coordinates) {
         if (feature.geometry.type === 'Polygon') {
@@ -34,6 +50,10 @@ function getClosestPlayerLand(playerLands, targetFeature) {
 }
 
 export default async function handler(req, res) {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+
     if (req.method !== 'POST') {
         return res.status(405).json({ error: 'Method not allowed' });
     }
@@ -78,7 +98,7 @@ export default async function handler(req, res) {
         profile.activeGame = true;
 
         await saveState(state, playerId);
-        return res.status(200).json({ success: true, country: targetFeature.properties.ADMIN, profile });
+        return res.status(200).json({ success: true, country: targetFeature.properties.ADMIN, profile, mapState: getMapStateSummary(state) });
     }
 
     if (type === 'UNLOCK_SKILL') {
@@ -201,7 +221,7 @@ export default async function handler(req, res) {
             });
 
             await saveState(state, playerId);
-            return res.status(200).json({ success: true, message: 'Assault initiated.', profile });
+            return res.status(200).json({ success: true, message: 'Assault initiated.', profile, mapState: getMapStateSummary(state) });
         }
 
         if (skillId === 'airstrike') {
@@ -221,7 +241,7 @@ export default async function handler(req, res) {
             });
 
             await saveState(state, playerId);
-            return res.status(200).json({ success: true, message: 'Airstrike successful. Enemy forces weakened.', profile });
+            return res.status(200).json({ success: true, message: 'Airstrike successful. Enemy forces weakened.', profile, mapState: getMapStateSummary(state) });
         }
 
         if (skillId === 'nuke') {
@@ -286,9 +306,9 @@ export default async function handler(req, res) {
 
             await saveState(state, playerId);
             if (surrendered) {
-                return res.status(200).json({ success: true, message: `Surrender Confirmed: ${target} surrendered to your forces.`, profile });
+                return res.status(200).json({ success: true, message: `Surrender Confirmed: ${target} surrendered to your forces.`, profile, mapState: getMapStateSummary(state) });
             }
-            return res.status(200).json({ success: true, message: 'Strategic nuke detonated. Radiation fallout detected.', profile });
+            return res.status(200).json({ success: true, message: 'Strategic nuke detonated. Radiation fallout detected.', profile, mapState: getMapStateSummary(state) });
         }
 
         if (skillId === 'propaganda') {
@@ -310,21 +330,21 @@ export default async function handler(req, res) {
             });
 
             await saveState(state, playerId);
-            return res.status(200).json({ success: true, message: 'Propaganda successful. Converted enemy forces.', profile });
+            return res.status(200).json({ success: true, message: 'Propaganda successful. Converted enemy forces.', profile, mapState: getMapStateSummary(state) });
         }
 
         if (skillId === 'intelHack') {
             targetFeature.properties.gameStats.intelHackedUntil = Date.now() + 45000;
 
             await saveState(state, playerId);
-            return res.status(200).json({ success: true, message: 'Systems hacked. Defense threshold temporarily reduced.', profile });
+            return res.status(200).json({ success: true, message: 'Systems hacked. Defense threshold temporarily reduced.', profile, mapState: getMapStateSummary(state) });
         }
 
         if (skillId === 'logistics') {
             profile.logisticsBoostUntil = Date.now() + 30000;
 
             await saveState(state, playerId);
-            return res.status(200).json({ success: true, message: 'Logistics boost activated. Production tripled.', profile });
+            return res.status(200).json({ success: true, message: 'Logistics boost activated. Production tripled.', profile, mapState: getMapStateSummary(state) });
         }
 
         return res.status(400).json({ error: 'Invalid skill action' });
@@ -337,7 +357,7 @@ export default async function handler(req, res) {
 
         profile.selectedColor = color;
         await saveState(state, playerId);
-        return res.status(200).json({ success: true, profile });
+        return res.status(200).json({ success: true, profile, mapState: getMapStateSummary(state) });
     }
 
     if (type === 'ABANDON') {
@@ -387,7 +407,7 @@ export default async function handler(req, res) {
         });
 
         await saveState(state, playerId);
-        return res.status(200).json({ success: true, collapsed: true });
+        return res.status(200).json({ success: true, collapsed: true, mapState: getMapStateSummary(state) });
     }
 
     if (type === 'SAVE_GAME') {
@@ -433,7 +453,7 @@ export default async function handler(req, res) {
         state.isPaused = false;
         profile.activeGame = true;
         await saveState(state, playerId);
-        return res.status(200).json({ success: true, profile });
+        return res.status(200).json({ success: true, profile, mapState: getMapStateSummary(state) });
     }
 
     if (type === 'DELETE_CLOUD_SAVE') {
@@ -468,7 +488,7 @@ export default async function handler(req, res) {
         });
 
         await saveState(state, playerId);
-        return res.status(200).json({ success: true, profile });
+        return res.status(200).json({ success: true, profile, mapState: getMapStateSummary(state) });
     }
 
     if (type === 'TOGGLE_PAUSE') {

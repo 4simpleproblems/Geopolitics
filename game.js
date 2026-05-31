@@ -601,7 +601,7 @@ async function connectBackend() {
 
 async function pollMapState() {
     try {
-        const res = await fetch(`/api/map?playerId=${playerId}`);
+        const res = await fetch(`/api/map?playerId=${playerId}&_t=${Date.now()}`);
         if (!res.ok) return;
 
         const data = await res.json();
@@ -757,7 +757,21 @@ async function sendAction(payload) {
             const err = await res.json();
             throw new Error(err.error || 'Action failed');
         }
-        return await res.json();
+        const data = await res.json();
+        if (data.success) {
+            if (data.profile) {
+                profile = data.profile;
+                const tokensVal = document.getElementById('player-tokens-val');
+                if (tokensVal) {
+                    tokensVal.innerText = profile.tokens;
+                }
+                updateCommandHubUI();
+            }
+            if (data.mapState) {
+                applyMapState(data.mapState);
+            }
+        }
+        return data;
     } catch (e) {
         logMsg(e.message);
         throw e;
