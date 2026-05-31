@@ -253,16 +253,20 @@ function updateAuthUI(session) {
 }
 
 async function init() {
-    if (window.location.hash.includes('access_token') || window.location.hash.includes('id_token')) {
-        history.replaceState(null, document.title, window.location.pathname + window.location.search);
-        window.showAuthModal();
-    }
     initSupabase();
+    let isRedirect = false;
+    if (window.location.hash.includes('access_token') || window.location.hash.includes('id_token')) {
+        isRedirect = true;
+    }
     if (window.supabase) {
         const { data } = await window.supabase.auth.getSession();
         if (data && data.session && data.session.user) {
             playerId = data.session.user.id;
         }
+    }
+    if (isRedirect) {
+        history.replaceState(null, document.title, window.location.pathname + window.location.search);
+        window.showAuthModal();
     }
     try {
         const res = await fetch(GEO_URL);
