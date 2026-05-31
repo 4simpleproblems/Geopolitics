@@ -66,7 +66,168 @@ window.setResolution = (res) => {
     }
 };
 
+function initSupabase() {
+    const url = 'https://epnjfsfveqbvoimpstbd.supabase.co';
+    const key = 'sb_publishable_12ymAaNfKTNDknIvcDVdEQ_l7P8jfdr';
+    const storage = {
+        getItem(k) {
+            try {
+                const v = window.localStorage.getItem(k);
+                if (v) return v;
+            } catch (e) {}
+            const name = k + "=";
+            const ca = document.cookie.split(';');
+            for (let i = 0; i < ca.length; i++) {
+                let c = ca[i].trim();
+                if (c.indexOf(name) === 0) {
+                    try {
+                        const raw = decodeURIComponent(c.substring(name.length));
+                        const parsed = JSON.parse(raw);
+                        if (parsed.access_token) {
+                            return JSON.stringify({
+                                access_token: parsed.access_token,
+                                refresh_token: parsed.refresh_token,
+                                expires_at: parsed.expires_at,
+                                token_type: "bearer",
+                                user: parsed.user || {}
+                            });
+                        }
+                    } catch (e) {}
+                }
+            }
+            return null;
+        },
+        setItem(k, v) {
+            try {
+                window.localStorage.setItem(k, v);
+            } catch (e) {}
+            try {
+                const parsed = JSON.parse(v);
+                if (parsed.access_token) {
+                    const compact = JSON.stringify({
+                        access_token: parsed.access_token,
+                        refresh_token: parsed.refresh_token,
+                        expires_at: parsed.expires_at,
+                        user: parsed.user ? { id: parsed.user.id, email: parsed.user.email } : {}
+                    });
+                    const d = new Date();
+                    d.setTime(d.getTime() + (365 * 24 * 60 * 60 * 1000));
+                    const exp = "expires=" + d.toUTCString();
+                    let dom = "";
+                    if (window.location.hostname.endsWith("things-and-shit.org")) {
+                        dom = ";domain=.things-and-shit.org";
+                    } else if (window.location.hostname.endsWith("geopolitics-game.org")) {
+                        dom = ";domain=.geopolitics-game.org";
+                    }
+                    const sec = window.location.protocol === 'https:' ? ';Secure' : '';
+                    document.cookie = k + "=" + encodeURIComponent(compact) + ";" + exp + ";path=/" + dom + ";SameSite=Lax" + sec;
+                }
+            } catch (e) {}
+        },
+        removeItem(k) {
+            try {
+                window.localStorage.removeItem(k);
+            } catch (e) {}
+            let dom = "";
+            if (window.location.hostname.endsWith("things-and-shit.org")) {
+                dom = ";domain=.things-and-shit.org";
+            } else if (window.location.hostname.endsWith("geopolitics-game.org")) {
+                dom = ";domain=.geopolitics-game.org";
+            }
+            document.cookie = k + "=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/" + dom;
+        }
+    };
+
+    if (window.supabase) {
+        window.supabase = window.supabase.createClient(url, key, {
+            auth: {
+                storage: storage,
+                autoRefreshToken: true,
+                persistSession: true
+            }
+        });
+
+        window.supabase.auth.onAuthStateChange((event, session) => {
+            updateAuthUI(session);
+            const authEvent = new CustomEvent('supabaseAuthChange', { detail: { session } });
+            window.dispatchEvent(authEvent);
+        });
+    }
+}
+
+window.showAuthModal = () => {
+    document.getElementById('auth-screen').style.display = 'flex';
+};
+
+window.closeAuthModal = () => {
+    document.getElementById('auth-screen').style.display = 'none';
+};
+
+window.loginGoogle = async () => {
+    if (!window.supabase) return;
+    const cleanUrl = window.location.href.split('#')[0];
+    await window.supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: cleanUrl }
+    });
+};
+
+window.loginEmailPrompt = async () => {
+    if (!window.supabase) return;
+    const email = prompt("Enter your email:");
+    if (email) {
+        const cleanUrl = window.location.href.split('#')[0];
+        const { error } = await window.supabase.auth.signInWithOtp({
+            email,
+            options: { emailRedirectTo: cleanUrl }
+        });
+        if (error) {
+            alert("Error: " + error.message);
+        } else {
+            alert("Magic link sent! Check your inbox.");
+        }
+    }
+};
+
+window.logoutSupabase = async () => {
+    if (!window.supabase) return;
+    await window.supabase.auth.signOut();
+    localStorage.removeItem('geo_player_id');
+    localStorage.removeItem('geo_player_name');
+    window.location.reload();
+};
+
+function updateAuthUI(session) {
+    const authBtn = document.getElementById('auth-btn');
+    const authBtnText = document.getElementById('auth-btn-text');
+    const loggedOutState = document.getElementById('auth-logged-out-state');
+    const loggedInState = document.getElementById('auth-logged-in-state');
+    const userEmailEl = document.getElementById('auth-user-email');
+    
+    if (session && session.user) {
+        if (authBtnText) {
+            authBtnText.innerText = session.user.email.split('@')[0].toUpperCase();
+        }
+        if (loggedOutState) loggedOutState.style.display = 'none';
+        if (loggedInState) loggedInState.style.display = 'block';
+        if (userEmailEl) userEmailEl.innerText = session.user.email;
+    } else {
+        if (authBtnText) {
+            authBtnText.innerText = 'SIGN IN';
+        }
+        if (loggedOutState) loggedOutState.style.display = 'block';
+        if (loggedInState) loggedInState.style.display = 'none';
+    }
+}
+
 async function init() {
+    initSupabase();
+    if (window.supabase) {
+        const { data } = await window.supabase.auth.getSession();
+        if (data && data.session && data.session.user) {
+            playerId = data.session.user.id;
+        }
+    }
     try {
         const res = await fetch(GEO_URL);
         if (!res.ok) throw new Error('HTTP error');
@@ -267,12 +428,19 @@ function animate() {
 
 async function connectBackend() {
     try {
+        let currentUsername = localStorage.getItem('geo_player_name') || '';
+        if (!currentUsername && window.supabase) {
+            const { data } = await window.supabase.auth.getSession();
+            if (data && data.session && data.session.user) {
+                currentUsername = data.session.user.email.split('@')[0];
+            }
+        }
         const res = await fetch('/api/register', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 playerId,
-                username: localStorage.getItem('geo_player_name') || ''
+                username: currentUsername
             })
         });
 

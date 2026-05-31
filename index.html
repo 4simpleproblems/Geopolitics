@@ -21,6 +21,7 @@
     </script>
     
     <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -47,6 +48,7 @@
                 <span class="token-label">TOKENS:</span>
                 <span id="player-tokens-val" class="token-val">0</span>
             </div>
+            <button id="auth-btn" class="settings-trigger-btn" onclick="window.showAuthModal()"><i class="fa-solid fa-user-shield"></i> <span id="auth-btn-text">SIGN IN</span></button>
             <button class="settings-trigger-btn" onclick="window.showSettingsModal()"><i class="fa-solid fa-gear"></i></button>
         </div>
     </div>
@@ -228,7 +230,6 @@
         </div>
     </div>
 
-    <!-- HUD Overlay for Active Deployment -->
     <div id="active-hud" class="overlay" style="display: none;">
         <div id="status-bar">
             <div class="status-item"><i class="fa-solid fa-network-wired"></i> <span class="status-val" id="hud-empire">N/A</span></div>
@@ -252,7 +253,6 @@
         <div class="ctx-item" onclick="window.handleContextAction('nuke')" style="color:var(--geist-error)"><i class="fa-solid fa-radiation"></i> Strategic Strike</div>
     </div>
 
-    <!-- System Collapse Screen -->
     <div id="collapse-screen" class="modal-overlay">
         <div class="modal-card error">
             <div class="modal-header">
@@ -278,7 +278,6 @@
         </div>
     </div>
 
-    <!-- Victory Screen -->
     <div id="victory-screen" class="modal-overlay">
         <div class="modal-card success">
             <div class="modal-header">
@@ -294,7 +293,38 @@
         </div>
     </div>
 
-    <!-- Settings Modal -->
+    <div id="auth-screen" class="modal-overlay">
+        <div class="modal-card">
+            <div class="modal-header">
+                <i class="fa-solid fa-user-shield"></i>
+                <h1 id="auth-modal-title">SECURE ACCESS GATEWAY</h1>
+            </div>
+            <div id="auth-logged-out-state">
+                <p>Authenticate to synchronize your state nodes, tokens, command upgrades, and achievements across the network.</p>
+                <div style="display: flex; flex-direction: column; gap: 16px; margin-bottom: 24px;">
+                    <button class="btn-primary" onclick="window.loginGoogle()" style="display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%;">
+                        <i class="fa-brands fa-google"></i> Continue with Google
+                    </button>
+                    <button class="btn-sec" onclick="window.loginEmailPrompt()" style="display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; padding: 16px 24px; font-size: 0.85rem;">
+                        <i class="fa-solid fa-envelope"></i> Continue with Email
+                    </button>
+                </div>
+            </div>
+            <div id="auth-logged-in-state" style="display: none; text-align: left;">
+                <p>Your tactical connection is authenticated and synchronized.</p>
+                <div class="setting-group" style="margin-bottom: 24px;">
+                    <label style="display:block; font-size:0.7rem; font-weight:700; color:var(--text-secondary); text-transform:uppercase; margin-bottom:8px;">Command Identity</label>
+                    <div style="background:#000; border:1px solid var(--border); padding:12px; border-radius:4px; font-family:var(--font-mono); font-size:0.8rem; word-break: break-all; color:#fff;" id="auth-user-email">
+                    </div>
+                </div>
+                <button class="btn-primary" onclick="window.logoutSupabase()" style="background: var(--error); border-color: rgba(255,51,51,0.2); width: 100%; margin-bottom: 24px;">
+                    <i class="fa-solid fa-right-from-bracket"></i> DE-AUTHENTICATE SECURE SESSION
+                </button>
+            </div>
+            <button class="btn-sec" onclick="window.closeAuthModal()" style="width: 100%; padding: 16px 24px; font-size: 0.85rem;">CLOSE</button>
+        </div>
+    </div>
+
     <div id="settings-screen" class="modal-overlay">
         <div class="modal-card">
             <div class="modal-header">
@@ -318,7 +348,6 @@
         </div>
     </div>
 
-    <!-- Info/Saving notification -->
     <div id="saving-overlay">
         <div class="spinner"></div>
         <span id="saving-text">Syncing System Data...</span>
