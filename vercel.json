@@ -2,6 +2,7 @@
   "version": 2,
   "cleanUrls": true,
   "routes": [
+    { "src": "/api/(.*)", "dest": "/api/$1" },
     { "src": "/map.geojson", "dest": "/map.geojson" },
     { "src": "/game.js", "dest": "/game.js" },
     { "src": "/utils.js", "dest": "/utils.js" },
