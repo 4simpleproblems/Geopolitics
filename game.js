@@ -164,28 +164,17 @@ window.closeAuthModal = () => {
 };
 
 window.loginGoogle = async () => {
-    if (!window.supabase) return;
-    const redirectUrl = 'https://things-and-shit.org/redirect.html?from=' + encodeURIComponent(window.location.href.split('#')[0]);
-    await window.supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: { redirectTo: redirectUrl }
-    });
+    const fromUrl = window.location.href.split('#')[0];
+    const routerUrl = 'https://things-and-shit.org/redirect.html?action=google&from=' + encodeURIComponent(fromUrl);
+    window.location.href = routerUrl;
 };
 
 window.loginEmailPrompt = async () => {
-    if (!window.supabase) return;
     const email = prompt("Enter your email:");
     if (email) {
-        const redirectUrl = 'https://things-and-shit.org/redirect.html?from=' + encodeURIComponent(window.location.href.split('#')[0]);
-        const { error } = await window.supabase.auth.signInWithOtp({
-            email,
-            options: { emailRedirectTo: redirectUrl }
-        });
-        if (error) {
-            alert("Error: " + error.message);
-        } else {
-            alert("Magic link sent! Check your inbox.");
-        }
+        const fromUrl = window.location.href.split('#')[0];
+        const routerUrl = 'https://things-and-shit.org/redirect.html?action=email&email=' + encodeURIComponent(email) + '&from=' + encodeURIComponent(fromUrl);
+        window.location.href = routerUrl;
     }
 };
 
