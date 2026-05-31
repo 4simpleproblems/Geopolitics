@@ -302,12 +302,40 @@ function getOwnerColor(ownerName) {
     return `hsl(${Math.abs(ownerName.charCodeAt(0) * 20) % 360}, 70%, 50%)`;
 }
 
-function hexToRgb(hex) {
-    if (!hex) return '255,255,255';
-    const r = parseInt(hex.slice(1, 3), 16);
-    const g = parseInt(hex.slice(3, 5), 16);
-    const b = parseInt(hex.slice(5, 7), 16);
-    return `${r}, ${g}, ${b}`;
+function hexToRgb(color) {
+    if (!color) return '255,255,255';
+    if (color.startsWith('hsl')) {
+        const matches = color.match(/\d+/g);
+        if (matches && matches.length >= 3) {
+            const h = parseInt(matches[0]);
+            const s = parseInt(matches[1]) / 100;
+            const l = parseInt(matches[2]) / 100;
+            const c = (1 - Math.abs(2 * l - 1)) * s;
+            const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+            const m = l - c / 2;
+            let r = 0, g = 0, b = 0;
+            if (h >= 0 && h < 60) { r = c; g = x; b = 0; }
+            else if (h >= 60 && h < 120) { r = x; g = c; b = 0; }
+            else if (h >= 120 && h < 180) { r = 0; g = c; b = x; }
+            else if (h >= 180 && h < 240) { r = 0; g = x; b = c; }
+            else if (h >= 240 && h < 300) { r = x; g = 0; b = c; }
+            else if (h >= 300 && h < 360) { r = c; g = 0; b = x; }
+            return `${Math.round((r + m) * 255)}, ${Math.round((g + m) * 255)}, ${Math.round((b + m) * 255)}`;
+        }
+    }
+    let hex = color;
+    if (hex.startsWith('#')) {
+        if (hex.length === 4) {
+            hex = '#' + hex[1] + hex[1] + hex[2] + hex[2] + hex[3] + hex[3];
+        }
+        const r = parseInt(hex.slice(1, 3), 16);
+        const g = parseInt(hex.slice(3, 5), 16);
+        const b = parseInt(hex.slice(5, 7), 16);
+        if (!isNaN(r) && !isNaN(g) && !isNaN(b)) {
+            return `${r}, ${g}, ${b}`;
+        }
+    }
+    return '255,255,255';
 }
 
 function setupWorld() {
@@ -331,8 +359,16 @@ function setupWorld() {
                 return `rgba(${hexToRgb(primaryColor)}, ${primary.val})`;
             }
             if (hoverCountry === d) {
-                if (ownerColor.startsWith('#')) return ownerColor + 'cc';
-                if (ownerColor.startsWith('hsl')) return ownerColor.replace('hsl(', 'hsla(').replace(')', ', 0.8)');
+                if (ownerColor.startsWith('#')) {
+                    let hex = ownerColor;
+                    if (hex.length === 4) {
+                        hex = '#' + hex[1] + hex[1] + hex[2] + hex[2] + hex[3] + hex[3];
+                    }
+                    return hex + 'cc';
+                }
+                if (ownerColor.startsWith('hsl')) {
+                    return ownerColor.replace('hsl(', 'hsla(').replace(')', ', 0.8)');
+                }
             }
             return ownerColor;
         })
