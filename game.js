@@ -204,20 +204,45 @@ window.logoutSupabase = async () => {
     window.location.reload();
 };
 
+window.saveAuthUsername = async () => {
+    const input = document.getElementById('auth-username-input');
+    if (input) {
+        let name = input.value.trim();
+        if (name) {
+            localStorage.setItem('geo_player_name', name);
+            if (profile) {
+                profile.username = name;
+            }
+            await connectBackend();
+            window.closeAuthModal();
+        } else {
+            alert('Please enter a username.');
+        }
+    }
+};
+
 function updateAuthUI(session) {
     const authBtn = document.getElementById('auth-btn');
     const authBtnText = document.getElementById('auth-btn-text');
     const loggedOutState = document.getElementById('auth-logged-out-state');
     const loggedInState = document.getElementById('auth-logged-in-state');
     const userEmailEl = document.getElementById('auth-user-email');
-    
+    const usernameInput = document.getElementById('auth-username-input');
+
     if (session && session.user) {
+        let name = localStorage.getItem('geo_player_name') || session.user.email.split('@')[0];
+        if (profile && profile.username) {
+            name = profile.username;
+        }
         if (authBtnText) {
-            authBtnText.innerText = session.user.email.split('@')[0].toUpperCase();
+            authBtnText.innerText = name.toUpperCase();
         }
         if (loggedOutState) loggedOutState.style.display = 'none';
         if (loggedInState) loggedInState.style.display = 'block';
         if (userEmailEl) userEmailEl.innerText = session.user.email;
+        if (usernameInput) {
+            usernameInput.value = name;
+        }
     } else {
         if (authBtnText) {
             authBtnText.innerText = 'SIGN IN';
@@ -229,14 +254,8 @@ function updateAuthUI(session) {
 
 async function init() {
     if (window.location.hash.includes('access_token') || window.location.hash.includes('id_token')) {
-        let name = prompt('Select your Command Identifier (Username):');
-        if (name) {
-            name = name.trim();
-            if (name) {
-                localStorage.setItem('geo_player_name', name);
-            }
-        }
         history.replaceState(null, document.title, window.location.pathname + window.location.search);
+        window.showAuthModal();
     }
     initSupabase();
     if (window.supabase) {
