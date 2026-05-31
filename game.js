@@ -740,6 +740,8 @@ function processActiveEvents(events) {
 
             document.getElementById('victory-tokens').innerText = `+${e.bonusTokens} TOKENS`;
             document.getElementById('victory-screen').style.display = 'flex';
+        } else if (e.type === 'LOG_MESSAGE') {
+            logMsg(e.message);
         }
     });
 }

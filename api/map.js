@@ -277,9 +277,12 @@ function resolvePendingAction(state, action) {
         let attMil = attackerLands.reduce((sum, f) => sum + f.properties.gameStats.mil, 0);
         let defMil = targetFeature.properties.gameStats.mil;
 
-        if (attMil > defMil * 1.05) {
+        const attStrength = attMil * (0.85 + Math.random() * 0.3);
+        const defStrength = defMil * (0.85 + Math.random() * 0.3);
+
+        if (attStrength > defStrength) {
             targetFeature.properties.owner = attackerName;
-            targetFeature.properties.gameStats.mil = Math.floor(attMil * 0.05);
+            targetFeature.properties.gameStats.mil = Math.max(1000, Math.floor(attMil * 0.05));
 
             attackerLands.forEach(f => {
                 f.properties.gameStats.mil = Math.floor(f.properties.gameStats.mil * 0.9);
@@ -287,9 +290,25 @@ function resolvePendingAction(state, action) {
 
             profile.stats.territoriesAnnexed++;
             checkWinCondition(state, profile);
+
+            state.activeEvents.push({
+                id: `inv_win_${playerId}_${targetName}_${Date.now()}`,
+                type: 'LOG_MESSAGE',
+                message: `Invasion Successful: You captured ${targetName}!`,
+                timestamp: Date.now(),
+                duration: 5000
+            });
         } else {
             attackerLands.forEach(f => {
                 f.properties.gameStats.mil = Math.floor(f.properties.gameStats.mil * 0.5);
+            });
+
+            state.activeEvents.push({
+                id: `inv_fail_${playerId}_${targetName}_${Date.now()}`,
+                type: 'LOG_MESSAGE',
+                message: `Invasion Failed: Defeated in ${targetName}.`,
+                timestamp: Date.now(),
+                duration: 5000
             });
         }
     } else if (type === 'NUKE_RESOLVE') {

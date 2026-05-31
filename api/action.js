@@ -231,10 +231,16 @@ export default async function handler(req, res) {
 
             let surrendered = false;
             if (targetFeature.properties.gameStats.mil < totalMil * 0.15 || targetFeature.properties.gameStats.mil < 50000) {
-                targetFeature.properties.owner = profile.username;
-                targetFeature.properties.gameStats.mil = Math.floor(totalMil * 0.02) + 1000;
+                const surrenderingOwner = targetFeature.properties.owner || targetFeature.properties.ADMIN;
+                const targetLands = state.mapData.filter(f => (f.properties.owner || f.properties.ADMIN) === surrenderingOwner);
+
+                targetLands.forEach(land => {
+                    land.properties.owner = profile.username;
+                    land.properties.gameStats.mil = Math.max(1000, Math.floor(totalMil * 0.02));
+                    profile.stats.territoriesAnnexed++;
+                });
+
                 surrendered = true;
-                profile.stats.territoriesAnnexed++;
 
                 const totalSectors = state.mapData.length;
                 const ownedCount = state.mapData.filter(f => f.properties.owner === profile.username).length;
