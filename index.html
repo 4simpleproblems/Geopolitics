@@ -3,11 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GEOPOLITICS</title>
-    
+    <title>GEOPOLITICS // CORE</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Manrope:wght@400;600;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://unpkg.com/three@0.156.0/build/three.min.js"></script>
     <script src="https://unpkg.com/globe.gl@2.32.0/dist/globe.gl.min.js"></script>
@@ -18,148 +17,275 @@
 
     <div id="globe-container"></div>
 
-    <div id="brand-header">GEOPOLITICS // GLOBAL COMMAND</div>
-
-    <div id="saving-overlay">
-        <div class="spinner"></div>
-        <span>Syncing Command Grid...</span>
-    </div>
-
-    <!-- Pause Menu Overlay -->
-    <div id="pause-overlay">
-        <div class="pause-content">
-            <h1>SYSTEM PAUSED</h1>
-            <div class="pause-options">
-                <button class="menu-btn" onclick="window.pauseAndSave()"><i class="fa-solid fa-play"></i> RESUME COMMAND</button>
-                <button class="menu-btn" onclick="window.showSettings()"><i class="fa-solid fa-gear"></i> VISUAL SETTINGS</button>
-                <button class="menu-btn" onclick="window.saveGame()"><i class="fa-solid fa-floppy-disk"></i> OVERWRITE GAME</button>
-                <button class="menu-btn danger" onclick="window.exitToMenu()"><i class="fa-solid fa-right-from-bracket"></i> ABANDON MISSION</button>
+    <div id="saas-header">
+        <div class="header-logo">
+            <span class="logo-bold">GEOPOLITICS</span>
+            <span class="logo-divider">//</span>
+            <span class="logo-sub">CORE_V2</span>
+        </div>
+        <div class="header-tabs">
+            <button class="tab-btn active" data-tab="deploy"><i class="fa-solid fa-terminal"></i> DEPLOY</button>
+            <button class="tab-btn" data-tab="hub"><i class="fa-solid fa-sliders"></i> COMMAND HUB</button>
+            <button class="tab-btn" data-tab="leaderboard"><i class="fa-solid fa-ranking-star"></i> LEADERBOARD</button>
+        </div>
+        <div class="header-profile">
+            <div id="connection-status" class="status-indicator offline">
+                <span class="status-dot"></span>
+                <span class="status-text">OFFLINE</span>
+            </div>
+            <div class="profile-tokens">
+                <span class="token-label">TOKENS:</span>
+                <span id="player-tokens-val" class="token-val">0</span>
             </div>
         </div>
     </div>
 
-    <!-- Settings Overlay -->
-    <div id="settings-overlay">
-        <div class="settings-card">
-            <h2>VISUAL SETTINGS</h2>
-            <div class="setting-group">
-                <label>Resolution / Fidelity</label>
-                <div class="toggle-group">
-                    <button id="res-high" class="toggle-btn active" onclick="window.setResolution('high')">HIGH</button>
-                    <button id="res-low" class="toggle-btn" onclick="window.setResolution('low')">LOW</button>
+    <div id="dashboard-overlay">
+        <div class="dashboard-panel">
+            
+            <div id="tab-deploy" class="tab-content active">
+                <div class="deploy-grid">
+                    <div class="deploy-main">
+                        <h1 class="panel-title">Initiate Node Deployment</h1>
+                        <p class="panel-desc">Select an unclaimed administrative division on the grid or enter its coordinate name below to spawn your state node.</p>
+                        
+                        <div class="input-group">
+                            <label>Origin Sector Name</label>
+                            <input type="text" id="start-country" placeholder="Enter target nation (e.g. USA, UKR, FRA)..." autocomplete="off">
+                            <div id="search-results"></div>
+                        </div>
+
+                        <div class="input-group">
+                            <label>Methodology Protocol</label>
+                            <div class="info-box">
+                                <i class="fa-solid fa-server"></i>
+                                <div>
+                                    <strong>Centralized State Simulation</strong>
+                                    <p>Your actions will be verified and executed by the central authoritative server. Live synchronization is maintained with all connected network commanders.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <button class="btn-primary" onclick="window.requestSpawn()">DEPLOY STATE NODE</button>
+                    </div>
+
+                    <div class="deploy-sidebar">
+                        <h2 class="section-title">Active Map Control</h2>
+                        <div class="control-header">
+                            <span>NATION</span>
+                            <span>SECTORS / MILITARY</span>
+                        </div>
+                        <div id="active-control-list" class="control-list">
+                            <div class="list-empty">No active deployments detected.</div>
+                        </div>
+                    </div>
                 </div>
-                <p class="setting-desc">Low resolution disables tactical arcs (planes/nukes) and 3D kinetic impact effects.</p>
             </div>
-            <button class="menu-btn" onclick="window.hideSettings()">APPLY & BACK</button>
+
+            <div id="tab-hub" class="tab-content">
+                <div class="hub-grid">
+                    <div class="hub-main">
+                        <h1 class="panel-title">Legacy Calibration</h1>
+                        <p class="panel-desc">Calibrate your global command parameters. Upgrades are permanently retained across all subsequent deployments.</p>
+
+                        <h2 class="section-title">Command Upgrades</h2>
+                        <div class="skill-tree">
+                            <div class="skill-card">
+                                <div class="skill-info">
+                                    <h3>Logistics Protocol</h3>
+                                    <p>Increases passive military generation across all controlled sectors.</p>
+                                    <div class="skill-stats">
+                                        <span>Current: <strong id="skill-logistics-current">0.3% / sec</strong></span>
+                                        <span>Next: <strong id="skill-logistics-next">0.4% / sec</strong></span>
+                                    </div>
+                                </div>
+                                <div class="skill-upgrade-action">
+                                    <div class="level-indicator" id="level-logistics">
+                                        <span class="bar"></span>
+                                        <span class="bar"></span>
+                                        <span class="bar"></span>
+                                    </div>
+                                    <button class="btn-sec" onclick="window.upgradeSkill('logistics')">UPGRADE <span id="cost-logistics">10 TKN</span></button>
+                                </div>
+                            </div>
+
+                            <div class="skill-card">
+                                <div class="skill-info">
+                                    <h3>Tactical Parity</h3>
+                                    <p>Reduces the military threshold coefficient required for neighboring border invasions.</p>
+                                    <div class="skill-stats">
+                                        <span>Current: <strong id="skill-parity-current">2.5x threshold</strong></span>
+                                        <span>Next: <strong id="skill-parity-next">2.3x threshold</strong></span>
+                                    </div>
+                                </div>
+                                <div class="skill-upgrade-action">
+                                    <div class="level-indicator" id="level-parity">
+                                        <span class="bar"></span>
+                                        <span class="bar"></span>
+                                        <span class="bar"></span>
+                                    </div>
+                                    <button class="btn-sec" onclick="window.upgradeSkill('tacticalParity')">UPGRADE <span id="cost-parity">15 TKN</span></button>
+                                </div>
+                            </div>
+
+                            <div class="skill-card">
+                                <div class="skill-info">
+                                    <h3>Economic Head Start</h3>
+                                    <p>Augments starting sector population capacity upon new node deployment.</p>
+                                    <div class="skill-stats">
+                                        <span>Current: <strong id="skill-econ-current">Base Capacity</strong></span>
+                                        <span>Next: <strong id="skill-econ-next">+5% Capacity</strong></span>
+                                    </div>
+                                </div>
+                                <div class="skill-upgrade-action">
+                                    <div class="level-indicator" id="level-econ">
+                                        <span class="bar"></span>
+                                        <span class="bar"></span>
+                                        <span class="bar"></span>
+                                    </div>
+                                    <button class="btn-sec" onclick="window.upgradeSkill('economicHeadstart')">UPGRADE <span id="cost-econ">12 TKN</span></button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="hub-sidebar">
+                        <h2 class="section-title">Faction Mastery</h2>
+                        <p class="sidebar-desc">Unlock custom signature hex-codes by completing operational achievements.</p>
+                        
+                        <div class="achievements-list">
+                            <div class="achievement-item" id="ach-clean">
+                                <div class="ach-meta">
+                                    <strong>Strategic Disarmament</strong>
+                                    <span>Win a match without deploying a nuclear strike.</span>
+                                </div>
+                                <div class="ach-color-preview" style="background:#ffd700"></div>
+                            </div>
+                            <div class="achievement-item" id="ach-conq">
+                                <div class="ach-meta">
+                                    <strong>Imperial Expansion</strong>
+                                    <span>Annex 50 total territories across all deployments.</span>
+                                </div>
+                                <div class="ach-color-preview" style="background:#800080"></div>
+                            </div>
+                            <div class="achievement-item" id="ach-goliath">
+                                <div class="ach-meta">
+                                    <strong>Mass Mobilization</strong>
+                                    <span>Achieve a peak military size of 5,000,000.</span>
+                                </div>
+                                <div class="ach-color-preview" style="background:#39ff14"></div>
+                            </div>
+                            <div class="achievement-item" id="ach-surv">
+                                <div class="ach-meta">
+                                    <strong>State Resilience</strong>
+                                    <span>Survive and collapse 5 total match deployments.</span>
+                                </div>
+                                <div class="ach-color-preview" style="background:#8b0000"></div>
+                            </div>
+                        </div>
+
+                        <h2 class="section-title" style="margin-top:20px;">Signature Color Hex</h2>
+                        <div class="color-picker-grid" id="faction-color-picker">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="tab-leaderboard" class="tab-content">
+                <h1 class="panel-title">Global Control Records</h1>
+                <p class="panel-desc">Ranking database of the top commanders by total system tokens and victory deployments.</p>
+                
+                <div class="leaderboard-table-container">
+                    <table class="leaderboard-table">
+                        <thead>
+                            <tr>
+                                <th>RANK</th>
+                                <th>COMMANDER ID</th>
+                                <th>VICTORIES</th>
+                                <th>NET TOKENS</th>
+                            </tr>
+                        </thead>
+                        <tbody id="leaderboard-table-body">
+                            <tr>
+                                <td colspan="4" class="table-empty">Syncing global leaderboard...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
         </div>
     </div>
 
-    <div class="overlay">
-        <!-- Status Bar -->
-        <div id="status-bar" style="display: none;">
-            <div class="status-item"><i class="fa-solid fa-crown"></i> <span class="status-val" id="val-empire">N/A</span></div>
-            <div class="status-item">Sectors <span class="status-val" id="val-terr">0</span></div>
-            <div class="status-item">Mil <span class="status-val" id="val-mil">0</span></div>
-            <div class="status-item"><i class="fa-solid fa-clock"></i> <span class="status-val" id="val-time">--:--</span></div>
+    <!-- HUD Overlay for Active Deployment -->
+    <div id="active-hud" class="overlay" style="display: none;">
+        <div id="status-bar">
+            <div class="status-item"><i class="fa-solid fa-network-wired"></i> <span class="status-val" id="hud-empire">N/A</span></div>
+            <div class="status-item">Sectors <span class="status-val" id="hud-sectors">0</span></div>
+            <div class="status-item">Personnel <span class="status-val" id="hud-pop">0</span></div>
+            <div class="status-item">Military <span class="status-val" id="hud-mil">0</span></div>
+            <button id="btn-abandon" onclick="window.requestSelfCollapse()"><i class="fa-solid fa-rectangle-xmark"></i> ABANDON</button>
         </div>
 
-        <!-- Leaderboard -->
-        <div id="leaderboard" style="display: none;">
-            <div class="lb-title"><i class="fa-solid fa-chart-line"></i> Global Control</div>
-            <div class="lb-header">
-                <span>Nation</span>
-                <span>Status</span>
-            </div>
-            <div id="lb-list"></div>
+        <div id="active-map-control-panel">
+            <div class="lb-title"><i class="fa-solid fa-globe"></i> Active Map Control</div>
+            <div id="active-map-control-list"></div>
         </div>
 
-        <!-- Large Pause Button -->
-        <div id="controls" style="display: none;">
-            <button id="btn-pause-square" onclick="window.pauseAndSave()">
-                <i class="fa-solid fa-pause"></i>
-            </button>
-        </div>
-
-        <div id="combat-log">Ready</div>
+        <div id="combat-log">System Synced // Ready</div>
     </div>
 
     <div id="ctx-menu">
-        <div class="ctx-item" onclick="handleAction('invade')"><i class="fa-solid fa-crosshairs"></i> Takeover</div>
-        <div class="ctx-item" onclick="handleAction('nuke')" style="color:var(--geist-error)"><i class="fa-solid fa-radiation"></i> Strategic Strike</div>
+        <div class="ctx-item" onclick="window.handleContextAction('invade')"><i class="fa-solid fa-crosshairs"></i> Border Takeover</div>
+        <div class="ctx-item" onclick="window.handleContextAction('nuke')" style="color:var(--geist-error)"><i class="fa-solid fa-radiation"></i> Strategic Strike</div>
     </div>
 
-    <div id="setup-screen">
-        <div class="setup-layout">
-            <div class="setup-info">
-                <div class="info-content">
-                    <h1>A Laboratory for Global Strategy</h1>
-                    <p class="mission">Geopolitics is a real-time educational simulation designed to explore the complexities of territorial acquisition, international relations, and resource management.</p>
-                    
-                    <div class="feature-grid">
-                        <div class="f-item">
-                            <i class="fa-solid fa-plane-up"></i>
-                            <h3>Air Mobility</h3>
-                            <p>Launch invasions from across oceans using plane-based tactical arcs.</p>
-                        </div>
-                        <div class="f-item">
-                            <i class="fa-solid fa-burst"></i>
-                            <h3>3D Kinetic Combat</h3>
-                            <p>Advanced Three.js rendering for high-stakes tactical impacts.</p>
-                        </div>
-                        <div class="f-item">
-                            <i class="fa-solid fa-shield-halved"></i>
-                            <h3>Defensive Parity</h3>
-                            <p>Simulating the cost of war through multi-nation annexation.</p>
-                        </div>
-                        <div class="f-item">
-                            <i class="fa-solid fa-server"></i>
-                            <h3>Command Data</h3>
-                            <p>Robust IndexedDB persistence for long-term global campaigns.</p>
-                        </div>
-                    </div>
-
-                    <div class="recent-deployments">
-                        <div class="saves-header">
-                            <h2>OPERATIONAL BACKUPS</h2>
-                            <div class="saves-actions">
-                                <button class="tiny-btn" onclick="window.exportAllSaves()" title="Export All Games"><i class="fa-solid fa-file-export"></i></button>
-                                <button class="tiny-btn" onclick="window.triggerImport()" title="Import Game"><i class="fa-solid fa-file-import"></i></button>
-                                <input type="file" id="import-file" style="display:none" onchange="window.importSave(this)">
-                            </div>
-                        </div>
-                        <div id="saves-list" class="save-list">
-                            <div style="color: #444; font-size: 0.8rem;">No operational backups detected.</div>
-                        </div>
-                    </div>
+    <!-- System Collapse Screen -->
+    <div id="collapse-screen" class="modal-overlay">
+        <div class="modal-card error">
+            <div class="modal-header">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+                <h1>NODE COLLAPSE DETECTED</h1>
+            </div>
+            <p>Your administrative presence on this grid has been fully annexed by opposing command structures.</p>
+            <div class="modal-stats">
+                <div class="stat-box">
+                    <span class="label">Sectors Controlled</span>
+                    <span class="value" id="collapse-sectors">0</span>
+                </div>
+                <div class="stat-box">
+                    <span class="label">Peak Military Capacity</span>
+                    <span class="value" id="collapse-peak">0</span>
                 </div>
             </div>
-
-            <div class="setup-command">
-                <div class="command-card">
-                    <div class="input-group">
-                        <label>Target Origin Point</label>
-                        <input type="text" id="start-country" placeholder="Name or Abbreviation (e.g. USA, UKR)..." autocomplete="off">
-                        <div id="search-results"></div>
-                    </div>
-
-                    <div class="input-group">
-                        <label>Operational Methodology</label>
-                        <div class="modes-grid">
-                            <div class="mode-card active" data-mode="takeover">
-                                <strong>TAKEOVER</strong>
-                                <span>Expand empire borders through tactical neighboring annexation.</span>
-                            </div>
-                            <div class="mode-card" data-mode="survival">
-                                <strong>SURVIVAL</strong>
-                                <span>Hostile environment. Global AI will target your sectors.</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <button class="btn-deploy" onclick="initializeGame()">INITIATE SYSTEM DEPLOYMENT</button>
-                </div>
+            <div class="modal-rewards">
+                <span>LEGACY COMPENSATION AWARDED:</span>
+                <strong id="collapse-tokens">+0 TOKENS</strong>
             </div>
+            <button class="btn-primary" onclick="window.closeCollapseModal()">RETURN TO COMMAND HUB</button>
         </div>
+    </div>
+
+    <!-- Victory Screen -->
+    <div id="victory-screen" class="modal-overlay">
+        <div class="modal-card success">
+            <div class="modal-header">
+                <i class="fa-solid fa-trophy"></i>
+                <h1>HEGEMONY ACHIEVED</h1>
+            </div>
+            <p>Your state node has established dominant control (70%+) over the active simulation grid.</p>
+            <div class="modal-rewards">
+                <span>HEGEMONY VICTORY BONUS AWARDED:</span>
+                <strong id="victory-tokens">+50 TOKENS</strong>
+            </div>
+            <button class="btn-primary" onclick="window.closeVictoryModal()">RETURN TO COMMAND HUB</button>
+        </div>
+    </div>
+
+    <!-- Info/Saving notification -->
+    <div id="saving-overlay">
+        <div class="spinner"></div>
+        <span id="saving-text">Syncing System Data...</span>
     </div>
 
     <script type="module" src="game.js"></script>

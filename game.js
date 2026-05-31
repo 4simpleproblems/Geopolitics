@@ -1,8 +1,4 @@
-/**
- * Geopolitics - Main Engine
- */
-
-import { formatNum, getFuzzy, getCentroid, snapToCoast } from './utils.js';
+import { formatNum, getCentroid } from './utils.js';
 
 const Globe = window.Globe || window.GlobeGl;
 const THREE = window.THREE;
@@ -18,171 +14,71 @@ let world;
 let mapData = [];
 let originalMapData = [];
 
-// Game State
 let player = { active: false, empireName: '', stats: { pop: 0, mil: 0 } };
-let activeMode = 'takeover'; 
 let hoverCountry = null;
-let isPaused = false;
-let hasUnsavedChanges = false;
-let aiInterval = null;
-let clockInterval = null;
 let activeArcs = [];
 let activeRings = [];
-let explosionData = []; 
-let invasionProgress = {}; 
+let explosionData = [];
+let invasionProgress = {};
 let resolution = localStorage.getItem('geo_res') || 'high';
-let currentGameId = null;
 
-// Temporal Mechanics
-let gameDate = new Date(); // Starts at device time
+let socket = null;
+let profile = null;
+let lastCtxTarget = null;
 
-// IndexedDB Setup
-const DB_NAME = 'GeoDB_v5'; 
-const STORE_NAME = 'games';
-const dbPromise = new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, 1);
-    request.onupgradeneeded = (e) => e.target.result.createObjectStore(STORE_NAME, { keyPath: 'id' });
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-});
-
-// Colors
-const PLAYER_COLOR = '#0070f3';
-const COLORS = {
-    1: '#ff4d4d', 2: '#7928ca', 3: '#00dfd8', 4: '#ffca28', 
-    5: '#9b59b6', 6: '#ff0080', 7: '#50e3c2'
-};
-
-function getCountryColor(feature) {
-    if (!feature || !feature.properties) return '#fff';
-    if (feature.properties.owner === player.empireName) return PLAYER_COLOR;
-    const mc = feature.properties.MAPCOLOR7;
-    let color = COLORS[mc] || `hsl(${Math.abs(feature.properties.ADMIN.charCodeAt(0) * 20) % 360}, 70%, 50%)`;
-    if (color === PLAYER_COLOR) color = '#f5a623'; 
-    return color;
-}
-
-function getOwnerColor(ownerName) {
-    if (ownerName === player.empireName) return PLAYER_COLOR;
-    const ownerNode = mapData.find(f => f.properties.ADMIN === ownerName);
-    return ownerNode ? getCountryColor(ownerNode) : '#fff';
+let playerId = localStorage.getItem('geo_player_id');
+if (!playerId) {
+    playerId = 'usr_' + Math.random().toString(36).substring(2, 15);
+    localStorage.setItem('geo_player_id', playerId);
 }
 
 const GEO_URL = './map.geojson';
 
-// Expose globals
-window.initializeGame = () => {
-    if (window.deploymentPending) startDeployment();
-    else logMsg("Initializing engine...");
-};
-window.handleAction = executeAction;
-window.saveGame = saveCampaign;
-window.locateNation = locateAndPulse;
-window.pauseAndSave = pauseAndSaveGame;
-window.exitToMenu = exitToMenuFlow;
-window.showSettings = () => { document.getElementById('settings-overlay').style.display = 'flex'; };
-window.hideSettings = () => { document.getElementById('settings-overlay').style.display = 'none'; };
-window.setResolution = (res) => {
-    resolution = res;
-    localStorage.setItem('geo_res', res);
-    const h = document.getElementById('res-high');
-    const l = document.getElementById('res-low');
-    if (h) h.classList.toggle('active', res === 'high');
-    if (l) l.classList.toggle('active', res === 'low');
-    if (res === 'low' && world) {
-        activeArcs = []; explosionData = [];
-        world.arcsData([]); world.customLayerData([]);
-    }
-};
+window.requestSpawn = requestSpawn;
+window.upgradeSkill = upgradeSkill;
+window.handleContextAction = handleContextAction;
+window.requestSelfCollapse = requestSelfCollapse;
+window.closeCollapseModal = () => { document.getElementById('collapse-screen').style.display = 'none'; };
+window.closeVictoryModal = () => { document.getElementById('victory-screen').style.display = 'none'; };
 
-// Management Globals
-window.deleteGame = deleteGame;
-window.renameGame = renameGame;
-window.exportAllSaves = exportSaves;
-window.triggerImport = () => document.getElementById('import-file').click();
-window.importSave = importSave;
-
-// Initialize
 async function init() {
     try {
         const res = await fetch(GEO_URL);
-        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+        if (!res.ok) throw new Error('HTTP error');
         const data = await res.json();
-        
-        originalMapData = data.features.map(f => {
-            const p = f.properties;
-            const pop = p.POP_EST || 1000000;
-            f.properties.owner = p.ADMIN;
-            f.properties.gameStats = { pop: pop, mil: Math.floor(pop * 0.01) };
-            return f;
-        });
+        originalMapData = data.features;
+        mapData = JSON.parse(JSON.stringify(originalMapData));
 
-        resetMapData();
-        setupNeighborhoods();
         setupWorld();
-        setupUIEvents();
-        loadGamesFromDB();
-        
-        window.deploymentPending = true;
-        window.setResolution(resolution);
+        setupTabs();
+        setupSearch();
+        setupContextHandlers();
+        connectWebSocket();
     } catch (err) {
-        console.error("Engine Fault:", err);
-        logMsg("Data link failure");
+        console.error('Init failure', err);
     }
 }
 
-function resetMapData() {
-    mapData = JSON.parse(JSON.stringify(originalMapData));
-}
-
-function setupNeighborhoods() {
-    mapData.forEach(c1 => {
-        c1.properties.neighbors = [];
-        const cent1 = getCentroid(c1);
-        mapData.forEach(c2 => {
-            if (c1 === c2) return;
-            const cent2 = getCentroid(c2);
-            const dist = Math.sqrt(Math.pow(cent1[0] - cent2[0], 2) + Math.pow(cent1[1] - cent2[1], 2));
-            if (dist < 80) c1.properties.neighbors.push(c2.properties.ADMIN);
-        });
-    });
-}
-
-function getSunPosition(date) {
-    const month = date.getMonth();
-    const angle = (month / 12) * Math.PI * 2;
-    const tilt = 23.44 * Math.PI / 180;
-    const radius = 1200;
-    const x = radius * Math.cos(angle);
-    const y = radius * Math.sin(angle) * Math.sin(tilt);
-    const z = radius * Math.sin(angle) * Math.cos(tilt);
-    return new THREE.Vector3(x, y, z);
-}
-
-function animate() {
-    requestAnimationFrame(animate);
-    if (player.active) {
-        const sunPos = getSunPosition(gameDate);
-        if (sunGroup) sunGroup.position.copy(sunPos);
-        if (sunLight) sunLight.position.copy(sunPos);
-    } else {
-        const time = Date.now() * 0.0001;
-        const x = 1200 * Math.cos(time);
-        const z = 1200 * Math.sin(time);
-        if (sunGroup) sunGroup.position.set(x, 200, z);
-        if (sunLight) sunLight.position.set(x, 200, z);
+function getOwnerColor(ownerName) {
+    if (!ownerName) return '#fff';
+    if (profile && ownerName === profile.username) return profile.selectedColor;
+    if (mapData) {
+        const country = mapData.find(f => f.properties.ADMIN === ownerName);
+        if (country && country.properties.color) return country.properties.color;
     }
-    if (starField) {
-        starField.rotation.y += 0.00008;
-        starField.rotation.x += 0.00004;
-    }
-    if (jupiterGroup) jupiterGroup.rotation.y += 0.002;
-    if (saturnGroup) saturnGroup.rotation.y += 0.003;
-    if (marsGroup) marsGroup.rotation.y += 0.004;
+    return `hsl(${Math.abs(ownerName.charCodeAt(0) * 20) % 360}, 70%, 50%)`;
+}
+
+function hexToRgb(hex) {
+    if (!hex) return '255,255,255';
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `${r}, ${g}, ${b}`;
 }
 
 function setupWorld() {
-    if (!Globe) return console.error("Globe constructor missing");
+    if (!Globe) return;
 
     world = Globe()(document.getElementById('globe-container'))
         .globeImageUrl('https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg')
@@ -193,17 +89,19 @@ function setupWorld() {
         .atmosphereAltitude(0.12)
         .polygonsData(mapData)
         .polygonCapColor(d => {
-            const ownerColor = getOwnerColor(d.properties.owner);
+            const owner = d.properties.owner || d.properties.ADMIN;
+            const ownerColor = getOwnerColor(owner);
             const progs = invasionProgress[d.properties.ADMIN];
             if (progs && progs.length > 0) {
-                const primary = progs.sort((a,b) => b.val - a.val)[0];
-                return `rgba(${hexToRgb(getOwnerColor(primary.attacker))}, ${primary.val})`;
+                const primary = progs.sort((a, b) => b.val - a.val)[0];
+                const primaryColor = getOwnerColor(primary.attacker);
+                return `rgba(${hexToRgb(primaryColor)}, ${primary.val})`;
             }
             if (hoverCountry === d) return ownerColor + 'cc';
             return ownerColor;
         })
         .polygonSideColor(() => 'rgba(255,255,255,0.05)')
-        .polygonStrokeColor(d => 'rgba(0,0,0,0.3)')
+        .polygonStrokeColor(() => 'rgba(0,0,0,0.3)')
         .polygonAltitude(0.01)
         .polygonLabel(d => createTooltip(d))
         .onPolygonHover(d => {
@@ -213,7 +111,7 @@ function setupWorld() {
         .onPolygonClick((d, e) => handlePolygonClick(d, e))
         .onPolygonRightClick((d, e) => showCtxMenu(d, e))
         .customLayerData(explosionData)
-        .customThreeObject(d => {
+        .customThreeObject(() => {
             if (!THREE) return null;
             const group = new THREE.Group();
             const mat = new THREE.MeshBasicMaterial({ color: 0xff4d4d, transparent: true, opacity: 0.9 });
@@ -261,10 +159,7 @@ function setupWorld() {
 
     sunGroup = new THREE.Group();
     const sunGeo = new THREE.SphereGeometry(45, 32, 32);
-    const sunMat = new THREE.MeshBasicMaterial({
-        color: 0xffeaad,
-        toneMapped: false
-    });
+    const sunMat = new THREE.MeshBasicMaterial({ color: 0xffeaad, toneMapped: false });
     const sunMesh = new THREE.Mesh(sunGeo, sunMat);
     sunGroup.add(sunMesh);
 
@@ -278,16 +173,11 @@ function setupWorld() {
     });
     const glowMesh = new THREE.Mesh(glowGeo, glowMat);
     sunGroup.add(glowMesh);
-
     world.scene().add(sunGroup);
 
     jupiterGroup = new THREE.Group();
     const jupiterGeo = new THREE.SphereGeometry(25, 32, 32);
-    const jupiterMat = new THREE.MeshPhongMaterial({
-        color: 0xd4a373,
-        shininess: 5,
-        bumpScale: 1
-    });
+    const jupiterMat = new THREE.MeshPhongMaterial({ color: 0xd4a373, shininess: 5 });
     const jupiterMesh = new THREE.Mesh(jupiterGeo, jupiterMat);
     jupiterGroup.add(jupiterMesh);
     jupiterGroup.position.set(-800, 150, -800);
@@ -295,10 +185,7 @@ function setupWorld() {
 
     saturnGroup = new THREE.Group();
     const saturnGeo = new THREE.SphereGeometry(18, 32, 32);
-    const saturnMat = new THREE.MeshPhongMaterial({
-        color: 0xe9d8a6,
-        shininess: 5
-    });
+    const saturnMat = new THREE.MeshPhongMaterial({ color: 0xe9d8a6, shininess: 5 });
     const saturnMesh = new THREE.Mesh(saturnGeo, saturnMat);
     saturnGroup.add(saturnMesh);
 
@@ -317,10 +204,7 @@ function setupWorld() {
 
     marsGroup = new THREE.Group();
     const marsGeo = new THREE.SphereGeometry(10, 32, 32);
-    const marsMat = new THREE.MeshPhongMaterial({
-        color: 0xc67b5c,
-        shininess: 2
-    });
+    const marsMat = new THREE.MeshPhongMaterial({ color: 0xc67b5c, shininess: 2 });
     const marsMesh = new THREE.Mesh(marsGeo, marsMat);
     marsGroup.add(marsMesh);
     marsGroup.position.set(-400, -100, 800);
@@ -349,154 +233,568 @@ function setupWorld() {
     animate();
 }
 
-function hexToRgb(hex) {
-    if (!hex) return '255,255,255';
-    const r = parseInt(hex.slice(1, 3), 16);
-    const g = parseInt(hex.slice(3, 5), 16);
-    const b = parseInt(hex.slice(5, 7), 16);
-    return `${r}, ${g}, ${b}`;
+function animate() {
+    requestAnimationFrame(animate);
+    const time = Date.now() * 0.0001;
+    const x = 1200 * Math.cos(time);
+    const z = 1200 * Math.sin(time);
+    if (sunGroup) sunGroup.position.set(x, 200, z);
+    if (sunLight) sunLight.position.set(x, 200, z);
+    if (starField) {
+        starField.rotation.y += 0.00008;
+        starField.rotation.x += 0.00004;
+    }
+    if (jupiterGroup) jupiterGroup.rotation.y += 0.002;
+    if (saturnGroup) saturnGroup.rotation.y += 0.003;
+    if (marsGroup) marsGroup.rotation.y += 0.004;
 }
 
-function setupUIEvents() {
-    document.querySelectorAll('.mode-card').forEach(card => {
-        card.addEventListener('click', (e) => {
-            document.querySelectorAll('.mode-card').forEach(c => c.classList.remove('active'));
-            e.currentTarget.classList.add('active');
-            activeMode = e.currentTarget.getAttribute('data-mode');
+function connectWebSocket() {
+    const wsUrl = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+        ? 'ws://localhost:8080'
+        : 'wss://api.geopolitics-game.org';
+
+    socket = new WebSocket(wsUrl);
+
+    socket.onopen = () => {
+        const statusEl = document.getElementById('connection-status');
+        if (statusEl) {
+            statusEl.className = 'status-indicator online';
+            statusEl.querySelector('.status-text').innerText = 'LIVE';
+        }
+        socket.send(JSON.stringify({
+            type: 'REGISTER',
+            playerId: playerId,
+            username: localStorage.getItem('geo_player_name') || ''
+        }));
+    };
+
+    socket.onclose = () => {
+        const statusEl = document.getElementById('connection-status');
+        if (statusEl) {
+            statusEl.className = 'status-indicator offline';
+            statusEl.querySelector('.status-text').innerText = 'OFFLINE';
+        }
+        setTimeout(connectWebSocket, 3000);
+    };
+
+    socket.onerror = () => {
+        socket.close();
+    };
+
+    socket.onmessage = (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            handleServerMessage(data);
+        } catch (e) {
+            console.error('WS parse error', e);
+        }
+    };
+}
+
+function handleServerMessage(data) {
+    const { type } = data;
+
+    if (type === 'WELCOME') {
+        profile = data.profile;
+        document.getElementById('player-tokens-val').innerText = profile.tokens;
+        
+        if (data.mapState) {
+            applyMapState(data.mapState);
+        }
+        if (data.leaderboard) {
+            updateLeaderboardUI(data.leaderboard);
+        }
+        updateCommandHubUI();
+        return;
+    }
+
+    if (type === 'MAP_INITIAL') {
+        applyMapState(data.mapState);
+        return;
+    }
+
+    if (type === 'MAP_UPDATE') {
+        data.updates.forEach(u => {
+            const feature = mapData.find(f => f.properties.ADMIN === u.admin);
+            if (feature) {
+                feature.properties.owner = u.owner;
+                feature.properties.gameStats.pop = u.pop;
+                feature.properties.gameStats.mil = u.mil;
+                feature.properties.color = u.color;
+            }
+        });
+        if (world) world.polygonsData(mapData);
+        updateActiveHUD();
+        return;
+    }
+
+    if (type === 'INVASION_START') {
+        const { attacker, target, invadeType, duration, startCoords, endCoords, color } = data;
+        if (resolution === 'high' && startCoords && endCoords) {
+            const arc = {
+                startLat: startCoords[1], startLng: startCoords[0],
+                endLat: endCoords[1], endLng: endCoords[0],
+                color: color ? [color, '#ffffff'] : ['#888888', '#ffffff']
+            };
+            activeArcs.push(arc);
+            if (world) world.arcsData(activeArcs);
+
+            setTimeout(() => {
+                activeArcs = activeArcs.filter(a => a !== arc);
+                if (world) world.arcsData(activeArcs);
+            }, duration);
+        }
+
+        const start = Date.now();
+        const anim = () => {
+            const elapsed = Date.now() - start;
+            const prog = Math.min(1, elapsed / duration);
+            if (!invasionProgress[target]) invasionProgress[target] = [];
+            let progState = invasionProgress[target].find(p => p.attacker === attacker);
+            if (!progState) {
+                progState = { attacker, val: 0 };
+                invasionProgress[target].push(progState);
+            }
+            progState.val = prog;
+
+            if (world) world.polygonCapColor(world.polygonCapColor());
+
+            if (prog < 1 && invasionProgress[target].includes(progState)) {
+                requestAnimationFrame(anim);
+            } else {
+                invasionProgress[target] = invasionProgress[target].filter(p => p !== progState);
+                if (world) world.polygonCapColor(world.polygonCapColor());
+            }
+        };
+        anim();
+        return;
+    }
+
+    if (type === 'NUKE_LAUNCH') {
+        const { attacker, target, startCoords, endCoords } = data;
+        if (resolution === 'high' && startCoords && endCoords) {
+            const arc = {
+                startLat: startCoords[1], startLng: startCoords[0],
+                endLat: endCoords[1], endLng: endCoords[0],
+                color: ['#ffff00', '#ee0000']
+            };
+            activeArcs.push(arc);
+            if (world) world.arcsData(activeArcs);
+
+            setTimeout(() => {
+                activeArcs = activeArcs.filter(a => a !== arc);
+                if (world) world.arcsData(activeArcs);
+
+                const boom = { lat: endCoords[1], lng: endCoords[0], radius: 15, age: 0 };
+                explosionData.push(boom);
+                const boomAnim = () => {
+                    boom.age += 0.02;
+                    if (boom.age < 1) {
+                        if (world) world.customLayerData(explosionData);
+                        requestAnimationFrame(boomAnim);
+                    } else {
+                        explosionData = explosionData.filter(b => b !== boom);
+                        if (world) world.customLayerData(explosionData);
+                    }
+                };
+                boomAnim();
+
+                document.body.classList.add('shake');
+                activeRings.push({ lat: endCoords[1], lng: endCoords[0], maxR: 25, speed: 6, repeat: 0, color: '#ee0000' });
+                if (world) world.ringsData(activeRings);
+
+                setTimeout(() => {
+                    activeRings = [];
+                    if (world) world.ringsData([]);
+                    document.body.classList.remove('shake');
+                }, 1000);
+
+            }, 1000);
+        }
+        return;
+    }
+
+    if (type === 'LEADERBOARD_UPDATE') {
+        updateLeaderboardUI(data.leaderboard);
+        return;
+    }
+
+    if (type === 'LOG') {
+        logMsg(data.message);
+        return;
+    }
+
+    if (type === 'SPAWN_SUCCESS') {
+        player.active = true;
+        player.empireName = profile.username;
+
+        document.getElementById('dashboard-overlay').style.display = 'none';
+        document.getElementById('saas-header').style.display = 'none';
+        document.getElementById('active-hud').style.display = 'block';
+
+        if (world) world.controls().autoRotate = false;
+
+        const targetNode = mapData.find(f => f.properties.ADMIN === data.country);
+        if (targetNode) {
+            const centroid = getCentroid(targetNode);
+            if (world) world.pointOfView({ lat: centroid[1], lng: centroid[0], altitude: 1.2 }, 2000);
+        }
+
+        updateActiveHUD();
+        return;
+    }
+
+    if (type === 'COLLAPSE') {
+        player.active = false;
+        document.getElementById('active-hud').style.display = 'none';
+        document.getElementById('saas-header').style.display = 'flex';
+        document.getElementById('dashboard-overlay').style.display = 'flex';
+
+        if (world) {
+            world.controls().autoRotate = true;
+            world.pointOfView({ lat: 20, lng: 0, altitude: 2.5 }, 1000);
+        }
+
+        document.getElementById('collapse-sectors').innerText = data.stats.territories;
+        document.getElementById('collapse-peak').innerText = formatNum(data.stats.peakMil);
+        document.getElementById('collapse-tokens').innerText = `+${data.tokensAwarded} TOKENS`;
+        document.getElementById('collapse-screen').style.display = 'flex';
+        return;
+    }
+
+    if (type === 'VICTORY') {
+        player.active = false;
+        document.getElementById('active-hud').style.display = 'none';
+        document.getElementById('saas-header').style.display = 'flex';
+        document.getElementById('dashboard-overlay').style.display = 'flex';
+
+        if (world) {
+            world.controls().autoRotate = true;
+            world.pointOfView({ lat: 20, lng: 0, altitude: 2.5 }, 1000);
+        }
+
+        document.getElementById('victory-tokens').innerText = `+${data.bonusTokens} TOKENS`;
+        document.getElementById('victory-screen').style.display = 'flex';
+        return;
+    }
+
+    if (type === 'ERROR') {
+        alert(data.message);
+        return;
+    }
+}
+
+function applyMapState(state) {
+    state.forEach(s => {
+        const feature = mapData.find(f => f.properties.ADMIN === s.admin);
+        if (feature) {
+            feature.properties.owner = s.owner;
+            feature.properties.gameStats = { pop: s.pop, mil: s.mil };
+            feature.properties.color = s.color;
+        }
+    });
+    if (world) world.polygonsData(mapData);
+}
+
+function setupTabs() {
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+
+            btn.classList.add('active');
+            const tabId = btn.getAttribute('data-tab');
+            document.getElementById(`tab-${tabId}`).classList.add('active');
         });
     });
+}
 
+function setupSearch() {
     const searchInput = document.getElementById('start-country');
-    
+    const resultsDiv = document.getElementById('search-results');
+
     if (searchInput) {
         searchInput.addEventListener('input', (e) => {
             const val = e.target.value.toLowerCase();
-            const resultsDiv = document.getElementById('search-results');
-            
-            const matches = originalMapData.filter(f => 
-                f.properties.ADMIN.toLowerCase().includes(val) || 
+            const matches = mapData.filter(f =>
+                f.properties.ADMIN.toLowerCase().includes(val) ||
                 (f.properties.ADM0_A3 && f.properties.ADM0_A3.toLowerCase().includes(val))
             ).slice(0, 8);
 
-            if (!val) { resultsDiv.style.display = 'none'; return; }
-            resultsDiv.innerHTML = matches.map(m => `<div class="search-item">${m.properties.ADMIN}</div>`).join('');
+            if (!val) {
+                resultsDiv.style.display = 'none';
+                return;
+            }
+            resultsDiv.innerHTML = matches.map(m => `<div class="search-item" data-name="${m.properties.ADMIN}">${m.properties.ADMIN}</div>`).join('');
             resultsDiv.style.display = 'block';
+
             document.querySelectorAll('.search-item').forEach(item => {
                 item.addEventListener('click', (ev) => {
-                    searchInput.value = ev.target.innerText;
+                    searchInput.value = ev.target.getAttribute('data-name');
                     resultsDiv.style.display = 'none';
+                    const targetNode = mapData.find(f => f.properties.ADMIN === searchInput.value);
+                    if (targetNode && world) {
+                        const centroid = getCentroid(targetNode);
+                        world.pointOfView({ lat: centroid[1], lng: centroid[0], altitude: 1.2 }, 1200);
+                    }
                 });
             });
         });
     }
 
     document.addEventListener('click', (e) => {
-        const resultsDiv = document.getElementById('search-results');
+        if (resultsDiv && e.target !== searchInput && e.target !== resultsDiv) {
+            resultsDiv.style.display = 'none';
+        }
+    });
+}
+
+function requestSpawn() {
+    const query = document.getElementById('start-country').value.trim();
+    if (!query) return alert('Select target sector.');
+
+    let finalName = localStorage.getItem('geo_player_name');
+    if (!finalName) {
+        finalName = prompt('Enter Empire Identifier Name:') || 'Commander';
+        localStorage.setItem('geo_player_name', finalName);
+    }
+
+    if (socket && socket.readyState === 1) {
+        socket.send(JSON.stringify({
+            type: 'SPAWN',
+            country: query
+        }));
+    }
+}
+
+function requestSelfCollapse() {
+    if (!confirm('Execute operational abandonment sequence?')) return;
+    if (socket && socket.readyState === 1) {
+        socket.send(JSON.stringify({ type: 'ABANDON' }));
+    }
+}
+
+function upgradeSkill(skill) {
+    if (socket && socket.readyState === 1) {
+        socket.send(JSON.stringify({
+            type: 'UPGRADE_SKILL',
+            skill
+        }));
+    }
+}
+
+function selectColor(color) {
+    if (socket && socket.readyState === 1) {
+        socket.send(JSON.stringify({
+            type: 'SELECT_COLOR',
+            color
+        }));
+    }
+}
+
+function handlePolygonClick(d) {
+    if (!player.active) {
         const searchInput = document.getElementById('start-country');
-        if(resultsDiv && e.target !== searchInput && e.target !== resultsDiv) resultsDiv.style.display = 'none';
-        if(e.button !== 2 && document.getElementById('ctx-menu')) document.getElementById('ctx-menu').style.display = 'none';
-    });
-}
-
-function startDeployment() {
-    const query = document.getElementById('start-country').value.trim().toLowerCase();
-    const startNode = originalMapData.find(f => f.properties.ADMIN.toLowerCase() === query);
-    if (!startNode) return alert("Nation Unknown.");
-
-    player.active = true;
-    player.empireName = startNode.properties.ADMIN;
-    currentGameId = currentGameId || Date.now();
-    
-    // Time starts at device time if new game
-    if (!currentGameId || currentGameId === Date.now()) {
-        gameDate = new Date();
+        if (searchInput) {
+            searchInput.value = d.properties.ADMIN;
+            const centroid = getCentroid(d);
+            if (world) world.pointOfView({ lat: centroid[1], lng: centroid[0], altitude: 1.2 }, 1200);
+        }
+        return;
     }
 
-    resetMapData();
-    setupNeighborhoods();
-    document.getElementById('setup-screen').style.display = 'none';
-    document.getElementById('status-bar').style.display = 'flex';
-    document.getElementById('leaderboard').style.display = 'flex';
-    document.getElementById('controls').style.display = 'flex';
-    
-    world.controls().autoRotate = false;
-    const centroid = getCentroid(startNode);
-    world.pointOfView({ lat: centroid[1], lng: centroid[0], altitude: 1.2 }, 2000);
+    if (d.properties.owner === profile.username) return;
 
-    updateUI(); updateLeaderboard();
-    logMsg(`DEPLOYMENT: ${startNode.properties.ADMIN}`);
-    
-    if (aiInterval) clearInterval(aiInterval);
-    aiInterval = setInterval(gameTick, 2000);
-
-    if (clockInterval) clearInterval(clockInterval);
-    clockInterval = setInterval(updateClock, 1000); // 1 real sec = 1 game month
-}
-
-function updateClock() {
-    if (isPaused || !player.active) return;
-    
-    // 1 real minute = 5 years = 60 months
-    // 1 real second = 1 month
-    gameDate.setMonth(gameDate.getMonth() + 1);
-    
-    const timeEl = document.getElementById('val-time');
-    if (timeEl) {
-        const options = { month: 'short', year: 'numeric' };
-        timeEl.innerText = gameDate.toLocaleDateString('en-US', options).toUpperCase();
+    if (socket && socket.readyState === 1) {
+        socket.send(JSON.stringify({
+            type: 'INVADE',
+            target: d.properties.ADMIN
+        }));
     }
 }
 
-function locateAndPulse(adminName) {
-    const target = mapData.find(f => f.properties.ADMIN === adminName);
-    if (!target) return;
-    const centroid = getCentroid(target);
-    world.pointOfView({ lat: centroid[1], lng: centroid[0], altitude: 1.2 }, 1200);
-    activeRings.push({ lat: centroid[1], lng: centroid[0], maxR: 20, speed: 4, repeat: 0, color: PLAYER_COLOR });
-    world.ringsData(activeRings);
-    setTimeout(() => { activeRings = []; world.ringsData([]); }, 1500);
-}
-
-function updateUI() {
+function showCtxMenu(d, e) {
     if (!player.active) return;
-    const playerLands = mapData.filter(f => f.properties.owner === player.empireName);
-    player.stats.pop = playerLands.reduce((sum, f) => sum + f.properties.gameStats.pop, 0);
-    player.stats.mil = playerLands.reduce((sum, f) => sum + f.properties.gameStats.mil, 0);
-    const vEmpire = document.getElementById('val-empire');
-    const vTerr = document.getElementById('val-terr');
-    const vMil = document.getElementById('val-mil');
-    if (vEmpire) vEmpire.innerText = player.empireName;
-    if (vTerr) vTerr.innerText = playerLands.length;
-    if (vMil) vMil.innerText = formatNum(player.stats.mil);
-    world.polygonsData(mapData);
+    if (d.properties.owner === profile.username) return;
+
+    const menu = document.getElementById('ctx-menu');
+    if (menu) {
+        menu.style.display = 'block';
+        menu.style.left = `${e.clientX}px`;
+        menu.style.top = `${e.clientY}px`;
+        lastCtxTarget = d;
+    }
 }
 
-function updateLeaderboard() {
-    const lbList = document.getElementById('lb-list');
-    if (!lbList) return;
-    let scores = {};
-    mapData.forEach(f => {
-        const owner = f.properties.owner;
-        if(!scores[owner]) scores[owner] = { terr: 0, mil: 0 };
-        scores[owner].terr++;
-        scores[owner].mil += f.properties.gameStats.mil;
+function setupContextHandlers() {
+    document.addEventListener('click', (e) => {
+        const menu = document.getElementById('ctx-menu');
+        if (menu && e.button !== 2) {
+            menu.style.display = 'none';
+        }
     });
-    const sorted = Object.entries(scores).sort((a,b) => b[1].terr - a[1].terr).slice(0, 20);
-    lbList.innerHTML = sorted.map((entry, idx) => `
-        <div class="lb-item ${entry[0] === player.empireName ? 'player' : ''}" onclick="window.locateNation('${entry[0]}')">
-            <span class="lb-name">${idx + 1}. ${entry[0]}</span>
-            <span class="lb-val">${entry[1].terr}<span class="lb-sub">S</span> / ${formatNum(entry[1].mil)}<span class="lb-sub">M</span></span>
-        </div>
-    `).join('');
 }
 
-function logMsg(msg) {
-    const log = document.getElementById('combat-log');
-    if (log) log.innerText = msg.toUpperCase();
+function handleContextAction(action) {
+    const target = lastCtxTarget;
+    const menu = document.getElementById('ctx-menu');
+    if (menu) menu.style.display = 'none';
+
+    if (!target) return;
+
+    if (action === 'invade') {
+        handlePolygonClick(target);
+    } else if (action === 'nuke') {
+        if (socket && socket.readyState === 1) {
+            socket.send(JSON.stringify({
+                type: 'NUKE',
+                target: target.properties.ADMIN
+            }));
+        }
+    }
+}
+
+function updateActiveHUD() {
+    if (!player.active || !profile) return;
+    const playerLands = mapData.filter(f => f.properties.owner === profile.username);
+    const totalPop = playerLands.reduce((sum, f) => sum + f.properties.gameStats.pop, 0);
+    const totalMil = playerLands.reduce((sum, f) => sum + f.properties.gameStats.mil, 0);
+
+    document.getElementById('hud-empire').innerText = profile.username;
+    document.getElementById('hud-sectors').innerText = playerLands.length;
+    document.getElementById('hud-pop').innerText = formatNum(totalPop);
+    document.getElementById('hud-mil').innerText = formatNum(totalMil);
+}
+
+function updateLeaderboardUI(leaderboard) {
+    const { mapControl, globalLeaderboard } = leaderboard;
+
+    const activeList = document.getElementById('active-control-list');
+    const hudList = document.getElementById('active-map-control-list');
+
+    const listHtml = mapControl.map((entry, idx) => `
+        <div class="control-item ${profile && entry.name === profile.username ? 'player' : ''}">
+            <span class="name">
+                <span class="color-dot" style="background:${entry.color || '#888'}"></span>
+                ${idx + 1}. ${entry.name}
+            </span>
+            <span class="stats">${entry.terr}S / ${formatNum(entry.mil)}M</span>
+        </div>
+    `).join('') || '<div class="list-empty">No active deployments detected.</div>';
+
+    if (activeList) activeList.innerHTML = listHtml;
+    if (hudList) hudList.innerHTML = listHtml;
+
+    const tableBody = document.getElementById('leaderboard-table-body');
+    if (tableBody) {
+        if (globalLeaderboard.length === 0) {
+            tableBody.innerHTML = '<tr><td colspan="4" class="table-empty">No global control records indexed.</td></tr>';
+        } else {
+            tableBody.innerHTML = globalLeaderboard.map((playerRecord, idx) => `
+                <tr>
+                    <td class="rank-col">${idx + 1}</td>
+                    <td class="username-col">${playerRecord.username}</td>
+                    <td>${playerRecord.wins}</td>
+                    <td>${playerRecord.tokens}</td>
+                </tr>
+            `).join('');
+        }
+    }
+}
+
+function updateCommandHubUI() {
+    if (!profile) return;
+
+    const skills = [
+        { id: 'logistics', base: '0.3%', factor: 0.1, suffix: '% / sec', step: 0.001, costs: [10, 25, 50] },
+        { id: 'tacticalParity', base: '2.5x', factor: -0.2, suffix: 'x threshold', step: -0.2, costs: [15, 30, 60] },
+        { id: 'economicHeadstart', base: 'Base', factor: 5, suffix: '% Capacity', step: 0.05, costs: [12, 25, 50] }
+    ];
+
+    skills.forEach(s => {
+        const lvl = profile.skills[s.id] || 0;
+        const currentSpan = document.getElementById(s.id === 'logistics' ? 'skill-logistics-current' : (s.id === 'tacticalParity' ? 'skill-parity-current' : 'skill-econ-current'));
+        const nextSpan = document.getElementById(s.id === 'logistics' ? 'skill-logistics-next' : (s.id === 'tacticalParity' ? 'skill-parity-next' : 'skill-econ-next'));
+        const costSpan = document.getElementById(s.id === 'logistics' ? 'cost-logistics' : (s.id === 'tacticalParity' ? 'cost-parity' : 'cost-econ'));
+        const indicators = document.getElementById(s.id === 'logistics' ? 'level-logistics' : (s.id === 'tacticalParity' ? 'level-parity' : 'level-econ')).children;
+
+        for (let i = 0; i < indicators.length; i++) {
+            indicators[i].className = i < lvl ? 'bar active' : 'bar';
+        }
+
+        if (s.id === 'logistics') {
+            const curVal = 0.003 + lvl * 0.001;
+            const nextVal = 0.003 + (lvl + 1) * 0.001;
+            currentSpan.innerText = `${(curVal * 100).toFixed(1)}% / sec`;
+            nextSpan.innerText = lvl < 3 ? `${(nextVal * 100).toFixed(1)}% / sec` : 'MAX';
+        } else if (s.id === 'tacticalParity') {
+            const curVal = 2.5 - lvl * 0.2;
+            const nextVal = 2.5 - (lvl + 1) * 0.2;
+            currentSpan.innerText = `${curVal.toFixed(1)}x threshold`;
+            nextSpan.innerText = lvl < 3 ? `${nextVal.toFixed(1)}x threshold` : 'MAX';
+        } else {
+            currentSpan.innerText = lvl === 0 ? 'Base Capacity' : `+${(lvl * 5)}% Capacity`;
+            nextSpan.innerText = lvl < 3 ? `+${((lvl + 1) * 5)}% Capacity` : 'MAX';
+        }
+
+        const cost = s.costs[lvl];
+        const btn = costSpan.parentElement;
+
+        if (lvl >= 3) {
+            costSpan.innerText = 'MAX';
+            btn.disabled = true;
+        } else {
+            costSpan.innerText = `${cost} TKN`;
+            btn.disabled = profile.tokens < cost;
+        }
+    });
+
+    const achievements = [
+        { id: 'ach-clean', color: '#ffd700', completed: profile.unlockedColors.includes('#ffd700') },
+        { id: 'ach-conq', color: '#800080', completed: profile.unlockedColors.includes('#800080') },
+        { id: 'ach-goliath', color: '#39ff14', completed: profile.unlockedColors.includes('#39ff14') },
+        { id: 'ach-surv', color: '#8b0000', completed: profile.unlockedColors.includes('#8b0000') }
+    ];
+
+    achievements.forEach(ach => {
+        const el = document.getElementById(ach.id);
+        if (el) {
+            el.className = ach.completed ? 'achievement-item unlocked' : 'achievement-item';
+        }
+    });
+
+    const pickerGrid = document.getElementById('faction-color-picker');
+    if (pickerGrid) {
+        const colorPalette = [
+            { hex: '#0070f3', id: 'default', req: null },
+            { hex: '#ffd700', id: 'clean', req: '#ffd700' },
+            { hex: '#800080', id: 'conq', req: '#800080' },
+            { hex: '#39ff14', id: 'goliath', req: '#39ff14' },
+            { hex: '#8b0000', id: 'surv', req: '#8b0000' }
+        ];
+
+        pickerGrid.innerHTML = colorPalette.map(c => {
+            const isUnlocked = c.req === null || profile.unlockedColors.includes(c.req);
+            const isSelected = profile.selectedColor === c.hex;
+
+            if (isUnlocked) {
+                return `<div class="color-box ${isSelected ? 'selected' : ''}" style="background:${c.hex}" data-hex="${c.hex}"></div>`;
+            } else {
+                return `<div class="color-box locked" style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1)"></div>`;
+            }
+        }).join('');
+
+        pickerGrid.querySelectorAll('.color-box:not(.locked)').forEach(box => {
+            box.addEventListener('click', (e) => {
+                selectColor(e.target.getAttribute('data-hex'));
+            });
+        });
+    }
 }
 
 function createTooltip(d) {
-    if (!player.active) return '';
+    if (!profile) return '';
     const p = d.properties;
     const stats = p.gameStats || { pop: 0, mil: 0 };
     const ownerColor = getOwnerColor(p.owner);
@@ -515,272 +813,9 @@ function createTooltip(d) {
     `;
 }
 
-function handlePolygonClick(d, e) {
-    if (!player.active || isPaused) return;
-    if (d.properties.owner === player.empireName) return;
-    const playerLands = mapData.filter(f => f.properties.owner === player.empireName);
-    const isBordering = playerLands.some(land => land.properties.neighbors.includes(d.properties.ADMIN));
-    executeInvasion(player.empireName, d, isBordering ? 'border' : 'air');
-    hasUnsavedChanges = true;
+function logMsg(msg) {
+    const log = document.getElementById('combat-log');
+    if (log) log.innerText = msg.toUpperCase();
 }
-
-function showCtxMenu(d, e) {
-    if (!player.active || isPaused) return;
-    if (d.properties.owner === player.empireName) return;
-    const menu = document.getElementById('ctx-menu');
-    if (menu) {
-        menu.style.display = 'block';
-        menu.style.left = `${e.clientX}px`; menu.style.top = `${e.clientY}px`;
-        window.lastCtxTarget = d;
-    }
-}
-
-function executeAction(type) {
-    const target = window.lastCtxTarget;
-    if (document.getElementById('ctx-menu')) document.getElementById('ctx-menu').style.display = 'none';
-    if (!target) return;
-    if (type === 'invade') handlePolygonClick(target);
-    if (type === 'nuke') { launchStrike(player.empireName, target); hasUnsavedChanges = true; }
-}
-
-function executeInvasion(attackerName, targetFeature, type = 'border') {
-    const targetName = targetFeature.properties.ADMIN;
-    if (!invasionProgress[targetName]) invasionProgress[targetName] = [];
-    if (invasionProgress[targetName].some(p => p.attacker === attackerName)) return;
-
-    const attackerLands = mapData.filter(f => f.properties.owner === attackerName);
-    if (attackerLands.length === 0) return;
-
-    let attMil = attackerLands.reduce((sum, f) => sum + f.properties.gameStats.mil, 0);
-    let defMil = targetFeature.properties.gameStats.mil;
-    
-    const threshold = type === 'air' ? 4.0 : 2.5;
-    if (defMil > attMil * threshold) {
-        if (attackerName === player.empireName) logMsg(`${type.toUpperCase()} ASSAULT IMPOSSIBLE: ${targetName}`);
-        return;
-    }
-
-    const tCentroid = getCentroid(targetFeature);
-    const sCentroid = getCentroid(attackerLands[0]); 
-    const arc = {
-        startLat: sCentroid[1], startLng: sCentroid[0],
-        endLat: tCentroid[1], endLng: tCentroid[0],
-        color: type === 'air' ? ['#ffffff', '#ffffff'] : [getOwnerColor(attackerName), '#ffffff']
-    };
-    
-    if (resolution === 'high') { activeArcs.push(arc); world.arcsData(activeArcs); }
-
-    const progState = { active: true, val: 0, attacker: attackerName, startTime: Date.now() };
-    invasionProgress[targetName].push(progState);
-    const duration = (type === 'air' ? 4000 : 2000) + (defMil / 50000) * 1000;
-    
-    const anim = () => {
-        if (isPaused) { progState.startTime += 16; requestAnimationFrame(anim); return; }
-        const elapsed = Date.now() - progState.startTime;
-        const prog = Math.min(1, elapsed / duration);
-        progState.val = prog;
-        if (world) world.polygonCapColor(world.polygonCapColor());
-        if (prog < 1) requestAnimationFrame(anim);
-        else {
-            activeArcs = activeArcs.filter(a => a !== arc); world.arcsData(activeArcs);
-            invasionProgress[targetName] = invasionProgress[targetName].filter(p => p !== progState);
-            if (targetFeature.properties.owner === attackerName) return;
-            if (attMil > defMil * 1.05) {
-                targetFeature.properties.owner = attackerName;
-                targetFeature.properties.gameStats.mil = Math.floor(attMil * 0.05);
-                attackerLands.forEach(f => f.properties.gameStats.mil = Math.floor(f.properties.gameStats.mil * 0.9));
-                if (attackerName === player.empireName) logMsg(`Annexation Complete: ${targetName}`);
-            } else {
-                attackerLands.forEach(f => f.properties.gameStats.mil = Math.floor(f.properties.gameStats.mil * 0.5));
-                if (attackerName === player.empireName) logMsg(`Offensive Repelled: ${targetName}`);
-            }
-            updateUI(); updateLeaderboard();
-        }
-    };
-    anim();
-}
-
-function launchStrike(attackerName, targetFeature) {
-    const centroid = getCentroid(targetFeature);
-    const attackerLands = mapData.filter(f => f.properties.owner === attackerName);
-    if (attackerLands.length === 0) return;
-    const startCentroid = getCentroid(attackerLands[0]);
-    const arc = {
-        startLat: startCentroid[1], startLng: startCentroid[0],
-        endLat: centroid[1], endLng: centroid[0], color: ['#ffff00', '#ee0000'] 
-    };
-    if (resolution === 'high') { activeArcs.push(arc); world.arcsData(activeArcs); }
-    setTimeout(() => {
-        activeArcs = activeArcs.filter(a => a !== arc); world.arcsData(activeArcs);
-        if (resolution === 'high') {
-            const boom = { lat: centroid[1], lng: centroid[0], radius: 15, age: 0 };
-            explosionData.push(boom);
-            const boomAnim = () => {
-                boom.age += 0.02;
-                if (boom.age < 1) { world.customLayerData(explosionData); requestAnimationFrame(boomAnim); }
-                else { explosionData = explosionData.filter(b => b !== boom); world.customLayerData(explosionData); }
-            };
-            boomAnim();
-            document.body.classList.add('shake');
-            activeRings.push({ lat: centroid[1], lng: centroid[0], maxR: 25, speed: 6, repeat: 0, color: '#ee0000' });
-            world.ringsData(activeRings);
-        }
-        targetFeature.properties.gameStats.pop = Math.floor(targetFeature.properties.gameStats.pop * 0.1);
-        targetFeature.properties.gameStats.mil = Math.floor(targetFeature.properties.gameStats.mil * 0.05);
-        logMsg(`Impact Confirmed: ${targetFeature.properties.ADMIN}`);
-        updateUI();
-        setTimeout(() => { activeRings = []; world.ringsData([]); document.body.classList.remove('shake'); }, 1000);
-    }, 1000);
-}
-
-function gameTick() {
-    if (!player.active || isPaused) return;
-    mapData.forEach(f => { f.properties.gameStats.mil += Math.floor(f.properties.gameStats.pop * 0.003); });
-    const empiresList = [...new Set(mapData.map(f => f.properties.owner))];
-    empiresList.forEach(emp => {
-        if (emp === player.empireName) return;
-        const myLands = mapData.filter(f => f.properties.owner === emp);
-        if (myLands.length === 0) return;
-        let potentialTargets = [];
-        myLands.forEach(land => {
-            land.properties.neighbors.forEach(nName => {
-                const nNode = mapData.find(f => f.properties.ADMIN === nName);
-                if (nNode && nNode.properties.owner !== emp) potentialTargets.push(nNode);
-            });
-        });
-        if (potentialTargets.length === 0) return;
-        let target = potentialTargets[Math.floor(Math.random() * potentialTargets.length)];
-        if (activeMode === 'survival' && potentialTargets.some(t => t.properties.owner === player.empireName)) {
-            target = potentialTargets.filter(t => t.properties.owner === player.empireName)[0];
-        }
-        const totalMil = myLands.reduce((sum, f) => sum + f.properties.gameStats.mil, 0);
-        if (totalMil > target.properties.gameStats.mil * 1.5 && target.properties.gameStats.mil < totalMil * 0.6) executeInvasion(emp, target, 'border');
-    });
-    updateUI(); updateLeaderboard();
-    if (mapData.filter(f => f.properties.owner === player.empireName).length === 0) {
-        logMsg("Network Collapse: Domain Lost");
-        player.active = false; clearInterval(aiInterval);
-    }
-}
-
-async function pauseAndSaveGame() {
-    isPaused = !isPaused;
-    const overlay = document.getElementById('pause-overlay');
-    if (isPaused) {
-        if (overlay) overlay.style.display = 'flex';
-        logMsg("System Static");
-        await saveCampaign();
-    } else {
-        if (overlay) overlay.style.display = 'none';
-        logMsg("System Active");
-    }
-}
-
-async function saveCampaign() {
-    const overlay = document.getElementById('saving-overlay');
-    if (overlay) overlay.style.display = 'flex';
-    const db = await dbPromise;
-    const saveObj = {
-        id: currentGameId, date: new Date().toLocaleString(), mode: activeMode, empire: player.empireName,
-        gameDate: gameDate.getTime(),
-        mapState: mapData.map(f => ({ admin: f.properties.ADMIN, owner: f.properties.owner, stats: f.properties.gameStats }))
-    };
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    tx.objectStore(STORE_NAME).put(saveObj);
-    tx.oncomplete = () => {
-        setTimeout(() => { if (overlay) overlay.style.display = 'none'; logMsg("Backup Synced"); hasUnsavedChanges = false; loadGamesFromDB(); }, 800);
-    };
-}
-
-async function loadGamesFromDB() {
-    const db = await dbPromise;
-    const tx = db.transaction(STORE_NAME, 'readonly');
-    const request = tx.objectStore(STORE_NAME).getAll();
-    request.onsuccess = () => {
-        const list = document.getElementById('saves-list');
-        if (!list) return;
-        const saves = request.result.reverse();
-        if (saves.length === 0) { list.innerHTML = '<div style="color: #444; font-size: 0.8rem;">No backups detected.</div>'; return; }
-        list.innerHTML = saves.map(s => `
-            <div class="save-item">
-                <div class="save-info" onclick="window.restoreFromDB(${s.id})">
-                    <div class="title">${s.empire.toUpperCase()}</div>
-                    <div class="meta">${s.mode.toUpperCase()} • ${s.date}</div>
-                </div>
-                <div class="save-controls">
-                    <button class="tiny-btn" onclick="window.renameGame(${s.id}, event)"><i class="fa-solid fa-pen"></i></button>
-                    <button class="tiny-btn" style="color:var(--geist-error)" onclick="window.deleteGame(${s.id}, event)"><i class="fa-solid fa-trash"></i></button>
-                </div>
-            </div>
-        `).join('');
-    };
-}
-
-async function deleteGame(id, e) {
-    if (e) e.stopPropagation();
-    if (!confirm("Permanently purge this campaign backup?")) return;
-    const db = await dbPromise;
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    tx.objectStore(STORE_NAME).delete(id);
-    tx.oncomplete = () => { logMsg("Sector Purged"); loadGamesFromDB(); };
-}
-
-async function renameGame(id, e) {
-    if (e) e.stopPropagation();
-    const newName = prompt("New Empire Designation:");
-    if (!newName) return;
-    const db = await dbPromise;
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    const req = store.get(id);
-    req.onsuccess = () => { const d = req.result; d.empire = newName; store.put(d); loadGamesFromDB(); };
-}
-
-async function exportSaves() {
-    const db = await dbPromise;
-    const tx = db.transaction(STORE_NAME, 'readonly');
-    const request = tx.objectStore(STORE_NAME).getAll();
-    request.onsuccess = () => {
-        const blob = new Blob([JSON.stringify(request.result)], { type: 'application/json' });
-        const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-        a.download = `geopolitics_db_${Date.now()}.json`; a.click();
-    };
-}
-
-function importSave(input) {
-    const file = input.files[0]; if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-        try {
-            const data = JSON.parse(e.target.result);
-            const db = await dbPromise;
-            const tx = db.transaction(STORE_NAME, 'readwrite');
-            const store = tx.objectStore(STORE_NAME);
-            (Array.isArray(data) ? data : [data]).forEach(g => store.put(g));
-            tx.oncomplete = () => { logMsg("External Data Linked"); loadGamesFromDB(); };
-        } catch (err) { alert("Invalid File"); }
-    };
-    reader.readAsText(file);
-}
-
-window.restoreFromDB = async (id) => {
-    const db = await dbPromise;
-    const tx = db.transaction(STORE_NAME, 'readonly');
-    const request = tx.objectStore(STORE_NAME).get(id);
-    request.onsuccess = () => {
-        const save = request.result; if (!save) return;
-        activeMode = save.mode; player.empireName = save.empire; currentGameId = save.id;
-        gameDate = new Date(save.gameDate || Date.now());
-        mapData = save.mapState.map(s => ({
-            type: 'Feature', properties: { ADMIN: s.admin, owner: s.owner, gameStats: s.stats },
-            geometry: originalMapData.find(f => f.properties.ADMIN === s.admin).geometry
-        }));
-        const searchInput = document.getElementById('start-country');
-        if (searchInput) searchInput.value = player.empireName;
-        startDeployment();
-    };
-};
-
-function exitToMenuFlow() { if (hasUnsavedChanges) { if (!confirm("Purge unsaved tactical data?")) return; } location.reload(); }
 
 init();

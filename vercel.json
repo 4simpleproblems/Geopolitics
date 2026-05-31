@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "cleanUrls": true,
+  "routes": [
+    { "src": "/map.geojson", "dest": "/map.geojson" },
+    { "src": "/game.js", "dest": "/game.js" },
+    { "src": "/utils.js", "dest": "/utils.js" },
+    { "src": "/style.css", "dest": "/style.css" },
+    { "src": "/(.*)", "dest": "/index.html" }
+  ]
+}
