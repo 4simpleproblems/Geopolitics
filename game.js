@@ -326,7 +326,10 @@ function setupWorld() {
                 const primaryColor = getOwnerColor(primary.attacker);
                 return `rgba(${hexToRgb(primaryColor)}, ${primary.val})`;
             }
-            if (hoverCountry === d) return ownerColor + 'cc';
+            if (hoverCountry === d) {
+                if (ownerColor.startsWith('#')) return ownerColor + 'cc';
+                if (ownerColor.startsWith('hsl')) return ownerColor.replace('hsl(', 'hsla(').replace(')', ', 0.8)');
+            }
             return ownerColor;
         })
         .polygonSideColor(() => 'rgba(255,255,255,0.05)')
