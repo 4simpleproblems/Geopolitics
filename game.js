@@ -24,6 +24,7 @@ let profile = null;
 let lastCtxTarget = null;
 let processedEventIds = new Set();
 let pollInterval = null;
+let isInitComplete = false;
 
 let playerId = localStorage.getItem('geo_player_id');
 if (!playerId) {
@@ -148,6 +149,23 @@ function initSupabase() {
         });
 
         window.supabase.auth.onAuthStateChange((event, session) => {
+            let nextPlayerId = playerId;
+            if (session && session.user) {
+                nextPlayerId = session.user.id;
+            } else {
+                let anonPlayerId = localStorage.getItem('geo_player_id');
+                if (!anonPlayerId) {
+                    anonPlayerId = 'usr_' + Math.random().toString(36).substring(2, 15);
+                    localStorage.setItem('geo_player_id', anonPlayerId);
+                }
+                nextPlayerId = anonPlayerId;
+            }
+            if (playerId !== nextPlayerId) {
+                playerId = nextPlayerId;
+                if (isInitComplete) {
+                    connectBackend();
+                }
+            }
             updateAuthUI(session);
             const authEvent = new CustomEvent('supabaseAuthChange', { detail: { session } });
             window.dispatchEvent(authEvent);
@@ -210,6 +228,16 @@ function updateAuthUI(session) {
 }
 
 async function init() {
+    if (window.location.hash.includes('access_token') || window.location.hash.includes('id_token')) {
+        let name = prompt('Select your Command Identifier (Username):');
+        if (name) {
+            name = name.trim();
+            if (name) {
+                localStorage.setItem('geo_player_name', name);
+            }
+        }
+        history.replaceState(null, document.title, window.location.pathname + window.location.search);
+    }
     initSupabase();
     if (window.supabase) {
         const { data } = await window.supabase.auth.getSession();
@@ -234,6 +262,7 @@ async function init() {
         setupTabs();
         setupSearch();
         setupContextHandlers();
+        isInitComplete = true;
         connectBackend();
     } catch (err) {
         console.error('Init failure', err);
@@ -416,6 +445,7 @@ function animate() {
 }
 
 async function connectBackend() {
+    if (pollInterval) clearInterval(pollInterval);
     try {
         let currentUsername = localStorage.getItem('geo_player_name') || '';
         if (!currentUsername && window.supabase) {
