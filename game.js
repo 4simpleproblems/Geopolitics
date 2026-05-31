@@ -2,7 +2,6 @@ import { formatNum, getCentroid } from './utils.js';
 import * as THREE from 'three';
 import Globe from 'globe.gl';
 
-
 let sunGroup;
 let sunLight;
 let starField;
@@ -21,9 +20,10 @@ let activeRings = [];
 let invasionProgress = {};
 let resolution = localStorage.getItem('geo_res') || 'high';
 
-let socket = null;
 let profile = null;
 let lastCtxTarget = null;
+let processedEventIds = new Set();
+let pollInterval = null;
 
 let playerId = localStorage.getItem('geo_player_id');
 if (!playerId) {
@@ -45,19 +45,12 @@ window.showSettingsModal = () => {
     const currentRes = localStorage.getItem('geo_res') || 'high';
     document.getElementById('res-high').classList.toggle('active', currentRes === 'high');
     document.getElementById('res-low').classList.toggle('active', currentRes === 'low');
-    document.getElementById('ws-endpoint-input').value = localStorage.getItem('geo_ws_endpoint') || '';
+    document.getElementById('ws-endpoint-input').value = 'Vercel Serverless Server';
+    document.getElementById('ws-endpoint-input').disabled = true;
 };
 
 window.closeSettingsModal = () => {
-    const inputVal = document.getElementById('ws-endpoint-input').value.trim();
-    const oldEndpoint = localStorage.getItem('geo_ws_endpoint') || '';
-    localStorage.setItem('geo_ws_endpoint', inputVal);
     document.getElementById('settings-screen').style.display = 'none';
-    if (inputVal !== oldEndpoint) {
-        if (socket) {
-            socket.close();
-        }
-    }
 };
 
 window.setResolution = (res) => {
@@ -72,7 +65,6 @@ window.setResolution = (res) => {
         }
     }
 };
-
 
 async function init() {
     try {
@@ -92,7 +84,7 @@ async function init() {
         setupTabs();
         setupSearch();
         setupContextHandlers();
-        connectWebSocket();
+        connectBackend();
     } catch (err) {
         console.error('Init failure', err);
     }
@@ -273,231 +265,63 @@ function animate() {
     if (marsGroup) marsGroup.rotation.y += 0.004;
 }
 
-function connectWebSocket() {
-    let wsUrl = localStorage.getItem('geo_ws_endpoint');
-    if (!wsUrl) {
-        wsUrl = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-            ? 'ws://localhost:8080'
-            : 'wss://api.geopolitics-game.org';
-    }
+async function connectBackend() {
+    try {
+        const res = await fetch('/api/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                playerId,
+                username: localStorage.getItem('geo_player_name') || ''
+            })
+        });
 
-    console.log("Connecting to command grid at:", wsUrl);
-    socket = new WebSocket(wsUrl);
+        if (res.ok) {
+            profile = await res.json();
+            localStorage.setItem('geo_player_name', profile.username);
 
-    socket.onopen = () => {
-        const statusEl = document.getElementById('connection-status');
-        if (statusEl) {
-            statusEl.className = 'status-indicator online';
-            statusEl.querySelector('.status-text').innerText = 'LIVE';
+            const statusEl = document.getElementById('connection-status');
+            if (statusEl) {
+                statusEl.className = 'status-indicator online';
+                statusEl.querySelector('.status-text').innerText = 'LIVE';
+            }
+
+            document.getElementById('player-tokens-val').innerText = profile.tokens;
+            updateCommandHubUI();
+
+            await pollMapState();
+            pollInterval = setInterval(pollMapState, 2000);
+        } else {
+            throw new Error('Registration failed');
         }
-        socket.send(JSON.stringify({
-            type: 'REGISTER',
-            playerId: playerId,
-            username: localStorage.getItem('geo_player_name') || ''
-        }));
-    };
-
-    socket.onclose = () => {
+    } catch (e) {
+        console.error('Serverless connection error', e);
         const statusEl = document.getElementById('connection-status');
         if (statusEl) {
             statusEl.className = 'status-indicator offline';
             statusEl.querySelector('.status-text').innerText = 'OFFLINE';
         }
-        setTimeout(connectWebSocket, 3000);
-    };
-
-    socket.onerror = () => {
-        socket.close();
-    };
-
-    socket.onmessage = (event) => {
-        try {
-            const data = JSON.parse(event.data);
-            handleServerMessage(data);
-        } catch (e) {
-            console.error('WS parse error', e);
-        }
-    };
+        setTimeout(connectBackend, 5000);
+    }
 }
 
-function handleServerMessage(data) {
-    const { type } = data;
+async function pollMapState() {
+    try {
+        const res = await fetch(`/api/map?playerId=${playerId}`);
+        if (!res.ok) return;
 
-    if (type === 'WELCOME') {
-        profile = data.profile;
-        document.getElementById('player-tokens-val').innerText = profile.tokens;
-        
-        if (data.mapState) {
-            applyMapState(data.mapState);
+        const data = await res.json();
+        if (data.welcomeProfile) {
+            profile = data.welcomeProfile;
+            document.getElementById('player-tokens-val').innerText = profile.tokens;
+            updateCommandHubUI();
         }
-        if (data.leaderboard) {
-            updateLeaderboardUI(data.leaderboard);
-        }
-        updateCommandHubUI();
-        return;
-    }
 
-    if (type === 'MAP_INITIAL') {
         applyMapState(data.mapState);
-        return;
-    }
-
-    if (type === 'MAP_UPDATE') {
-        data.updates.forEach(u => {
-            const feature = mapData.find(f => f.properties.ADMIN === u.admin);
-            if (feature) {
-                feature.properties.owner = u.owner;
-                feature.properties.gameStats.pop = u.pop;
-                feature.properties.gameStats.mil = u.mil;
-                feature.properties.color = u.color;
-            }
-        });
-        if (world) world.polygonsData(mapData);
-        updateActiveHUD();
-        return;
-    }
-
-    if (type === 'INVASION_START') {
-        const { attacker, target, invadeType, duration, startCoords, endCoords, color } = data;
-        if (resolution === 'high' && startCoords && endCoords) {
-            const arc = {
-                startLat: startCoords[1], startLng: startCoords[0],
-                endLat: endCoords[1], endLng: endCoords[0],
-                color: color ? [color, '#ffffff'] : ['#888888', '#ffffff']
-            };
-            activeArcs.push(arc);
-            if (world) world.arcsData(activeArcs);
-
-            setTimeout(() => {
-                activeArcs = activeArcs.filter(a => a !== arc);
-                if (world) world.arcsData(activeArcs);
-            }, duration);
-        }
-
-        const start = Date.now();
-        const anim = () => {
-            const elapsed = Date.now() - start;
-            const prog = Math.min(1, elapsed / duration);
-            if (!invasionProgress[target]) invasionProgress[target] = [];
-            let progState = invasionProgress[target].find(p => p.attacker === attacker);
-            if (!progState) {
-                progState = { attacker, val: 0 };
-                invasionProgress[target].push(progState);
-            }
-            progState.val = prog;
-
-            if (world) world.polygonCapColor(world.polygonCapColor());
-
-            if (prog < 1 && invasionProgress[target].includes(progState)) {
-                requestAnimationFrame(anim);
-            } else {
-                invasionProgress[target] = invasionProgress[target].filter(p => p !== progState);
-                if (world) world.polygonCapColor(world.polygonCapColor());
-            }
-        };
-        anim();
-        return;
-    }
-
-    if (type === 'NUKE_LAUNCH') {
-        const { attacker, target, startCoords, endCoords } = data;
-        if (resolution === 'high' && startCoords && endCoords) {
-            const arc = {
-                startLat: startCoords[1], startLng: startCoords[0],
-                endLat: endCoords[1], endLng: endCoords[0],
-                color: ['#ffff00', '#ee0000']
-            };
-            activeArcs.push(arc);
-            if (world) world.arcsData(activeArcs);
-
-            setTimeout(() => {
-                activeArcs = activeArcs.filter(a => a !== arc);
-                if (world) world.arcsData(activeArcs);
-
-
-
-                document.body.classList.add('shake');
-                activeRings.push({ lat: endCoords[1], lng: endCoords[0], maxR: 25, speed: 6, repeat: 0, color: '#ee0000' });
-                if (world) world.ringsData(activeRings);
-
-                setTimeout(() => {
-                    activeRings = [];
-                    if (world) world.ringsData([]);
-                    document.body.classList.remove('shake');
-                }, 1000);
-
-            }, 1000);
-        }
-        return;
-    }
-
-    if (type === 'LEADERBOARD_UPDATE') {
         updateLeaderboardUI(data.leaderboard);
-        return;
-    }
-
-    if (type === 'LOG') {
-        logMsg(data.message);
-        return;
-    }
-
-    if (type === 'SPAWN_SUCCESS') {
-        player.active = true;
-        player.empireName = profile.username;
-
-        document.getElementById('dashboard-overlay').style.display = 'none';
-        document.getElementById('saas-header').style.display = 'none';
-        document.getElementById('active-hud').style.display = 'block';
-
-        if (world) world.controls().autoRotate = false;
-
-        const targetNode = mapData.find(f => f.properties.ADMIN === data.country);
-        if (targetNode) {
-            const centroid = getCentroid(targetNode);
-            if (world) world.pointOfView({ lat: centroid[1], lng: centroid[0], altitude: 1.2 }, 2000);
-        }
-
-        updateActiveHUD();
-        return;
-    }
-
-    if (type === 'COLLAPSE') {
-        player.active = false;
-        document.getElementById('active-hud').style.display = 'none';
-        document.getElementById('saas-header').style.display = 'flex';
-        document.getElementById('dashboard-overlay').style.display = 'flex';
-
-        if (world) {
-            world.controls().autoRotate = true;
-            world.pointOfView({ lat: 20, lng: 0, altitude: 2.5 }, 1000);
-        }
-
-        document.getElementById('collapse-sectors').innerText = data.stats.territories;
-        document.getElementById('collapse-peak').innerText = formatNum(data.stats.peakMil);
-        document.getElementById('collapse-tokens').innerText = `+${data.tokensAwarded} TOKENS`;
-        document.getElementById('collapse-screen').style.display = 'flex';
-        return;
-    }
-
-    if (type === 'VICTORY') {
-        player.active = false;
-        document.getElementById('active-hud').style.display = 'none';
-        document.getElementById('saas-header').style.display = 'flex';
-        document.getElementById('dashboard-overlay').style.display = 'flex';
-
-        if (world) {
-            world.controls().autoRotate = true;
-            world.pointOfView({ lat: 20, lng: 0, altitude: 2.5 }, 1000);
-        }
-
-        document.getElementById('victory-tokens').innerText = `+${data.bonusTokens} TOKENS`;
-        document.getElementById('victory-screen').style.display = 'flex';
-        return;
-    }
-
-    if (type === 'ERROR') {
-        alert(data.message);
-        return;
+        processActiveEvents(data.activeEvents);
+    } catch (e) {
+        console.error('State poll error', e);
     }
 }
 
@@ -506,67 +330,139 @@ function applyMapState(state) {
         const feature = mapData.find(f => f.properties.ADMIN === s.admin);
         if (feature) {
             feature.properties.owner = s.owner;
-            feature.properties.gameStats = { pop: s.pop, mil: s.mil };
+            feature.properties.gameStats.pop = s.pop;
+            feature.properties.gameStats.mil = s.mil;
             feature.properties.color = s.color;
         }
     });
     if (world) world.polygonsData(mapData);
+    updateActiveHUD();
 }
 
-function setupTabs() {
-    document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+function processActiveEvents(events) {
+    events.forEach(e => {
+        if (processedEventIds.has(e.id)) return;
+        processedEventIds.add(e.id);
 
-            btn.classList.add('active');
-            const tabId = btn.getAttribute('data-tab');
-            document.getElementById(`tab-${tabId}`).classList.add('active');
-        });
-    });
-}
+        if (e.type === 'INVASION_START') {
+            const { attacker, target, invadeType, duration, startCoords, endCoords, color } = e;
+            if (resolution === 'high' && startCoords && endCoords) {
+                const arc = {
+                    startLat: startCoords[1], startLng: startCoords[0],
+                    endLat: endCoords[1], endLng: endCoords[0],
+                    color: color ? [color, '#ffffff'] : ['#888888', '#ffffff']
+                };
+                activeArcs.push(arc);
+                if (world) world.arcsData(activeArcs);
 
-function setupSearch() {
-    const searchInput = document.getElementById('start-country');
-    const resultsDiv = document.getElementById('search-results');
-
-    if (searchInput) {
-        searchInput.addEventListener('input', (e) => {
-            const val = e.target.value.toLowerCase();
-            const matches = mapData.filter(f =>
-                f.properties.ADMIN.toLowerCase().includes(val) ||
-                (f.properties.ADM0_A3 && f.properties.ADM0_A3.toLowerCase().includes(val))
-            ).slice(0, 8);
-
-            if (!val) {
-                resultsDiv.style.display = 'none';
-                return;
+                setTimeout(() => {
+                    activeArcs = activeArcs.filter(a => a !== arc);
+                    if (world) world.arcsData(activeArcs);
+                }, duration);
             }
-            resultsDiv.innerHTML = matches.map(m => `<div class="search-item" data-name="${m.properties.ADMIN}">${m.properties.ADMIN}</div>`).join('');
-            resultsDiv.style.display = 'block';
 
-            document.querySelectorAll('.search-item').forEach(item => {
-                item.addEventListener('click', (ev) => {
-                    searchInput.value = ev.target.getAttribute('data-name');
-                    resultsDiv.style.display = 'none';
-                    const targetNode = mapData.find(f => f.properties.ADMIN === searchInput.value);
-                    if (targetNode && world) {
-                        const centroid = getCentroid(targetNode);
-                        world.pointOfView({ lat: centroid[1], lng: centroid[0], altitude: 1.2 }, 1200);
-                    }
-                });
-            });
-        });
-    }
+            const start = Date.now();
+            const anim = () => {
+                const elapsed = Date.now() - start;
+                const prog = Math.min(1, elapsed / duration);
+                if (!invasionProgress[target]) invasionProgress[target] = [];
+                let progState = invasionProgress[target].find(p => p.attacker === attacker);
+                if (!progState) {
+                    progState = { attacker, val: 0 };
+                    invasionProgress[target].push(progState);
+                }
+                progState.val = prog;
 
-    document.addEventListener('click', (e) => {
-        if (resultsDiv && e.target !== searchInput && e.target !== resultsDiv) {
-            resultsDiv.style.display = 'none';
+                if (world) world.polygonCapColor(world.polygonCapColor());
+
+                if (prog < 1 && invasionProgress[target].includes(progState)) {
+                    requestAnimationFrame(anim);
+                } else {
+                    invasionProgress[target] = invasionProgress[target].filter(p => p !== progState);
+                    if (world) world.polygonCapColor(world.polygonCapColor());
+                }
+            };
+            anim();
+        } else if (e.type === 'NUKE_LAUNCH') {
+            const { attacker, target, startCoords, endCoords, duration } = e;
+            if (resolution === 'high' && startCoords && endCoords) {
+                const arc = {
+                    startLat: startCoords[1], startLng: startCoords[0],
+                    endLat: endCoords[1], endLng: endCoords[0],
+                    color: ['#ffff00', '#ee0000']
+                };
+                activeArcs.push(arc);
+                if (world) world.arcsData(activeArcs);
+
+                setTimeout(() => {
+                    activeArcs = activeArcs.filter(a => a !== arc);
+                    if (world) world.arcsData(activeArcs);
+
+                    document.body.classList.add('shake');
+                    activeRings.push({ lat: endCoords[1], lng: endCoords[0], maxR: 25, speed: 6, repeat: 0, color: '#ee0000' });
+                    if (world) world.ringsData(activeRings);
+
+                    setTimeout(() => {
+                        activeRings = [];
+                        if (world) world.ringsData([]);
+                        document.body.classList.remove('shake');
+                    }, 1000);
+
+                }, duration);
+            }
+        } else if (e.type === 'COLLAPSE') {
+            if (e.playerId === playerId) {
+                player.active = false;
+                document.getElementById('active-hud').style.display = 'none';
+                document.getElementById('saas-header').style.display = 'flex';
+                document.getElementById('dashboard-overlay').style.display = 'flex';
+
+                if (world) {
+                    world.controls().autoRotate = true;
+                    world.pointOfView({ lat: 20, lng: 0, altitude: 2.5 }, 1000);
+                }
+
+                document.getElementById('collapse-sectors').innerText = e.stats.territories;
+                document.getElementById('collapse-peak').innerText = formatNum(e.stats.peakMil);
+                document.getElementById('collapse-tokens').innerText = `+${e.tokensAwarded} TOKENS`;
+                document.getElementById('collapse-screen').style.display = 'flex';
+            }
+        } else if (e.type === 'VICTORY') {
+            player.active = false;
+            document.getElementById('active-hud').style.display = 'none';
+            document.getElementById('saas-header').style.display = 'flex';
+            document.getElementById('dashboard-overlay').style.display = 'flex';
+
+            if (world) {
+                world.controls().autoRotate = true;
+                world.pointOfView({ lat: 20, lng: 0, altitude: 2.5 }, 1000);
+            }
+
+            document.getElementById('victory-tokens').innerText = `+${e.bonusTokens} TOKENS`;
+            document.getElementById('victory-screen').style.display = 'flex';
         }
     });
 }
 
-function requestSpawn() {
+async function sendAction(payload) {
+    try {
+        const res = await fetch('/api/action', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ playerId, ...payload })
+        });
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.error || 'Action failed');
+        }
+        return await res.json();
+    } catch (e) {
+        logMsg(e.message);
+        throw e;
+    }
+}
+
+async function requestSpawn() {
     const query = document.getElementById('start-country').value.trim();
     if (!query) return alert('Select target sector.');
 
@@ -576,40 +472,62 @@ function requestSpawn() {
         localStorage.setItem('geo_player_name', finalName);
     }
 
-    if (socket && socket.readyState === 1) {
-        socket.send(JSON.stringify({
-            type: 'SPAWN',
-            country: query
-        }));
+    try {
+        const result = await sendAction({ type: 'SPAWN', target: query });
+        if (result.success) {
+            player.active = true;
+            player.empireName = profile.username;
+
+            document.getElementById('dashboard-overlay').style.display = 'none';
+            document.getElementById('saas-header').style.display = 'none';
+            document.getElementById('active-hud').style.display = 'block';
+
+            if (world) world.controls().autoRotate = false;
+
+            const targetNode = mapData.find(f => f.properties.ADMIN === result.country);
+            if (targetNode) {
+                const centroid = getCentroid(targetNode);
+                if (world) world.pointOfView({ lat: centroid[1], lng: centroid[0], altitude: 1.2 }, 2000);
+            }
+
+            await pollMapState();
+        }
+    } catch (e) {
+        alert(e.message);
     }
 }
 
-function requestSelfCollapse() {
+async function requestSelfCollapse() {
     if (!confirm('Execute operational abandonment sequence?')) return;
-    if (socket && socket.readyState === 1) {
-        socket.send(JSON.stringify({ type: 'ABANDON' }));
-    }
+    try {
+        await sendAction({ type: 'ABANDON' });
+        await pollMapState();
+    } catch (e) {}
 }
 
-function upgradeSkill(skill) {
-    if (socket && socket.readyState === 1) {
-        socket.send(JSON.stringify({
-            type: 'UPGRADE_SKILL',
-            skill
-        }));
-    }
+async function upgradeSkill(skill) {
+    try {
+        const res = await sendAction({ type: 'UPGRADE_SKILL', skill });
+        if (res.success) {
+            profile = res.profile;
+            document.getElementById('player-tokens-val').innerText = profile.tokens;
+            updateCommandHubUI();
+        }
+    } catch (e) {}
 }
 
-function selectColor(color) {
-    if (socket && socket.readyState === 1) {
-        socket.send(JSON.stringify({
-            type: 'SELECT_COLOR',
-            color
-        }));
-    }
+async function selectColor(color) {
+    try {
+        const res = await sendAction({ type: 'SELECT_COLOR', color });
+        if (res.success) {
+            profile = res.profile;
+            updateCommandHubUI();
+            await pollMapState();
+        }
+    } catch (e) {}
 }
 
-function handlePolygonClick(d) {
+async function handlePolygonClick(d) {
     if (!player.active) {
         const searchInput = document.getElementById('start-country');
         if (searchInput) {
@@ -622,12 +540,10 @@ function handlePolygonClick(d) {
 
     if (d.properties.owner === profile.username) return;
 
-    if (socket && socket.readyState === 1) {
-        socket.send(JSON.stringify({
-            type: 'INVADE',
-            target: d.properties.ADMIN
-        }));
-    }
+    try {
+        await sendAction({ type: 'INVADE', target: d.properties.ADMIN });
+        logMsg(`Assault launched on ${d.properties.ADMIN}`);
+    } catch (e) {}
 }
 
 function showCtxMenu(d, e) {
@@ -662,12 +578,9 @@ function handleContextAction(action) {
     if (action === 'invade') {
         handlePolygonClick(target);
     } else if (action === 'nuke') {
-        if (socket && socket.readyState === 1) {
-            socket.send(JSON.stringify({
-                type: 'NUKE',
-                target: target.properties.ADMIN
-            }));
-        }
+        sendAction({ type: 'NUKE', target: target.properties.ADMIN })
+            .then(() => logMsg(`Strategic strike on ${target.properties.ADMIN}`))
+            .catch(() => {});
     }
 }
 
@@ -827,6 +740,59 @@ function createTooltip(d) {
             </div>
         </div>
     `;
+}
+
+function setupTabs() {
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+
+            btn.classList.add('active');
+            const tabId = btn.getAttribute('data-tab');
+            document.getElementById(`tab-${tabId}`).classList.add('active');
+        });
+    });
+}
+
+function setupSearch() {
+    const searchInput = document.getElementById('start-country');
+    const resultsDiv = document.getElementById('search-results');
+
+    if (searchInput) {
+        searchInput.addEventListener('input', (e) => {
+            const val = e.target.value.toLowerCase();
+            const matches = mapData.filter(f =>
+                f.properties.ADMIN.toLowerCase().includes(val) ||
+                (f.properties.ADM0_A3 && f.properties.ADM0_A3.toLowerCase().includes(val))
+            ).slice(0, 8);
+
+            if (!val) {
+                resultsDiv.style.display = 'none';
+                return;
+            }
+            resultsDiv.innerHTML = matches.map(m => `<div class="search-item" data-name="${m.properties.ADMIN}">${m.properties.ADMIN}</div>`).join('');
+            resultsDiv.style.display = 'block';
+
+            document.querySelectorAll('.search-item').forEach(item => {
+                item.addEventListener('click', (ev) => {
+                    searchInput.value = ev.target.getAttribute('data-name');
+                    resultsDiv.style.display = 'none';
+                    const targetNode = mapData.find(f => f.properties.ADMIN === searchInput.value);
+                    if (targetNode && world) {
+                        const centroid = getCentroid(targetNode);
+                        world.pointOfView({ lat: centroid[1], lng: centroid[0], altitude: 1.2 }, 1200);
+                    }
+                });
+            });
+        });
+    }
+
+    document.addEventListener('click', (e) => {
+        if (resultsDiv && e.target !== searchInput && e.target !== resultsDiv) {
+            resultsDiv.style.display = 'none';
+        }
+    });
 }
 
 function logMsg(msg) {
