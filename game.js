@@ -165,10 +165,10 @@ window.closeAuthModal = () => {
 
 window.loginGoogle = async () => {
     if (!window.supabase) return;
-    const cleanUrl = window.location.href.split('#')[0];
+    const redirectUrl = 'https://things-and-shit.org/redirect.html?from=' + encodeURIComponent(window.location.href.split('#')[0]);
     await window.supabase.auth.signInWithOAuth({
         provider: 'google',
-        options: { redirectTo: cleanUrl }
+        options: { redirectTo: redirectUrl }
     });
 };
 
@@ -176,10 +176,10 @@ window.loginEmailPrompt = async () => {
     if (!window.supabase) return;
     const email = prompt("Enter your email:");
     if (email) {
-        const cleanUrl = window.location.href.split('#')[0];
+        const redirectUrl = 'https://things-and-shit.org/redirect.html?from=' + encodeURIComponent(window.location.href.split('#')[0]);
         const { error } = await window.supabase.auth.signInWithOtp({
             email,
-            options: { emailRedirectTo: cleanUrl }
+            options: { emailRedirectTo: redirectUrl }
         });
         if (error) {
             alert("Error: " + error.message);
