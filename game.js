@@ -417,7 +417,7 @@ function setupWorld() {
         .ringColor(d => d.color)
         .ringMaxRadius(d => d.maxR)
         .ringPropagationSpeed(d => d.speed)
-        .ringRepeat(d => d.repeat);
+        .ringRepeatPeriod(d => d.repeatPeriod);
 
     const controls = world.controls();
     controls.maxDistance = 350;
@@ -693,7 +693,7 @@ function processActiveEvents(events) {
                     if (world) world.arcsData(activeArcs);
 
                     document.body.classList.add('shake');
-                    activeRings.push({ lat: endCoords[1], lng: endCoords[0], maxR: 25, speed: 6, repeat: 0, color: '#ee0000' });
+                    activeRings.push({ lat: endCoords[1], lng: endCoords[0], maxR: 25, speed: 6, repeatPeriod: 0, color: '#ee0000' });
                     if (world) world.ringsData(activeRings);
 
                     setTimeout(() => {
