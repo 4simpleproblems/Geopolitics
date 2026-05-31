@@ -27,7 +27,7 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: 'Player ID required' });
     }
 
-    const state = await getState();
+    const state = await getState(playerId);
     const profile = state.db[playerId];
 
     if (!profile) {
@@ -59,7 +59,7 @@ export default async function handler(req, res) {
 
         profile.stats.peakMilitary = Math.max(profile.stats.peakMilitary, targetFeature.properties.gameStats.mil);
 
-        await saveState(state);
+        await saveState(state, playerId);
         return res.status(200).json({ success: true, country: targetFeature.properties.ADMIN });
     }
 
@@ -117,7 +117,7 @@ export default async function handler(req, res) {
             timestamp: Date.now()
         });
 
-        await saveState(state);
+        await saveState(state, playerId);
         return res.status(200).json({ success: true, message: 'Assault initiated.' });
     }
 
@@ -150,7 +150,7 @@ export default async function handler(req, res) {
             timestamp: Date.now()
         });
 
-        await saveState(state);
+        await saveState(state, playerId);
         return res.status(200).json({ success: true, message: 'Strategic strike launched.' });
     }
 
@@ -172,7 +172,7 @@ export default async function handler(req, res) {
         profile.tokens -= cost;
         profile.skills[skill] = currentLvl + 1;
 
-        await saveState(state);
+        await saveState(state, playerId);
         return res.status(200).json({ success: true, profile });
     }
 
@@ -182,7 +182,7 @@ export default async function handler(req, res) {
         }
 
         profile.selectedColor = color;
-        await saveState(state);
+        await saveState(state, playerId);
         return res.status(200).json({ success: true, profile });
     }
 
@@ -224,7 +224,7 @@ export default async function handler(req, res) {
             duration: 5000
         });
 
-        await saveState(state);
+        await saveState(state, playerId);
         return res.status(200).json({ success: true, collapsed: true });
     }
 

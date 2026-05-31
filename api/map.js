@@ -19,7 +19,7 @@ function getCentroid(feature) {
 
 export default async function handler(req, res) {
     const { playerId } = req.query;
-    const state = await getState();
+    const state = await getState(playerId);
 
     const now = Date.now();
 
@@ -122,7 +122,7 @@ export default async function handler(req, res) {
 
         state.activeEvents = state.activeEvents.filter(e => e.timestamp + e.duration > now);
         state.lastTick = state.lastTick + (ticks * 2000);
-        await saveState(state);
+        await saveState(state, playerId);
     }
 
     const leaderboard = getLeaderboard(state);

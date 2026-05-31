@@ -57,9 +57,75 @@ async function kvSet(key, value) {
     });
 }
 
-export async function getState() {
+function rowToProfile(row) {
+    if (!row) return null;
+    return {
+        id: row.id,
+        username: row.username,
+        tokens: row.tokens || 0,
+        skills: row.skills || { logistics: 0, tacticalParity: 0, economicHeadstart: 0 },
+        stats: row.stats || { territoriesAnnexed: 0, peakMilitary: 0, wins: 0, survived: 0 },
+        unlockedColors: row.unlocked_colors || ['#0070f3'],
+        selectedColor: row.selected_color || '#0070f3'
+    };
+}
+
+function profileToRow(profile) {
+    if (!profile) return null;
+    return {
+        id: profile.id,
+        username: profile.username,
+        tokens: profile.tokens || 0,
+        skills: profile.skills || { logistics: 0, tacticalParity: 0, economicHeadstart: 0 },
+        stats: profile.stats || { territoriesAnnexed: 0, peakMilitary: 0, wins: 0, survived: 0 },
+        unlocked_colors: profile.unlockedColors || ['#0070f3'],
+        selected_color: profile.selectedColor || '#0070f3',
+        updated_at: new Date().toISOString()
+    };
+}
+
+async function fetchProfile(playerId) {
+    try {
+        const res = await fetch(`https://epnjfsfveqbvoimpstbd.supabase.co/rest/v1/geopolitics_profiles?id=eq.${playerId}`, {
+            headers: {
+                'apikey': 'sb_publishable_12ymAaNfKTNDknIvcDVdEQ_l7P8jfdr',
+                'Authorization': 'Bearer sb_publishable_12ymAaNfKTNDknIvcDVdEQ_l7P8jfdr'
+            }
+        });
+        if (res.ok) {
+            const data = await res.json();
+            if (data && data.length > 0) {
+                return rowToProfile(data[0]);
+            }
+        }
+    } catch (e) {
+        console.error('Error fetching profile from Supabase', e);
+    }
+    return null;
+}
+
+async function upsertProfile(profile) {
+    try {
+        const row = profileToRow(profile);
+        await fetch('https://epnjfsfveqbvoimpstbd.supabase.co/rest/v1/geopolitics_profiles', {
+            method: 'POST',
+            headers: {
+                'apikey': 'sb_publishable_12ymAaNfKTNDknIvcDVdEQ_l7P8jfdr',
+                'Authorization': 'Bearer sb_publishable_12ymAaNfKTNDknIvcDVdEQ_l7P8jfdr',
+                'Content-Type': 'application/json',
+                'Prefer': 'resolution=merge-duplicates'
+            },
+            body: JSON.stringify(row)
+        });
+    } catch (e) {
+        console.error('Error saving profile to Supabase', e);
+    }
+}
+
+export async function getState(playerId) {
     const useKV = process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN;
 
+    let state;
     if (useKV) {
         try {
             const mapRes = await kvRequest('get', ['geo:map_data']);
@@ -81,26 +147,40 @@ export async function getState() {
                 await kvSet('geo:db', JSON.stringify(db));
             }
 
-            return { mapData, lastTick, activeEvents, db };
+            state = { mapData, lastTick, activeEvents, db };
         } catch (e) {
             console.error('KV Read Error, falling back to memory', e);
         }
     }
 
-    if (!inMemoryState) {
-        const mapData = await loadOriginalMap();
-        inMemoryState = {
-            mapData,
-            lastTick: Date.now(),
-            activeEvents: [],
-            db: {}
-        };
+    if (!state) {
+        if (!inMemoryState) {
+            const mapData = await loadOriginalMap();
+            inMemoryState = {
+                mapData,
+                lastTick: Date.now(),
+                activeEvents: [],
+                db: {}
+            };
+        }
+        state = inMemoryState;
     }
 
-    return inMemoryState;
+    if (playerId) {
+        const profile = await fetchProfile(playerId);
+        if (profile) {
+            state.db[playerId] = profile;
+        }
+    }
+
+    return state;
 }
 
-export async function saveState(state) {
+export async function saveState(state, playerId) {
+    if (playerId && state.db[playerId]) {
+        await upsertProfile(state.db[playerId]);
+    }
+
     const useKV = process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN;
 
     if (useKV) {

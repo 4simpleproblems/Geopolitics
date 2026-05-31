@@ -10,7 +10,7 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: 'Player ID required' });
     }
 
-    const state = await getState();
+    const state = await getState(playerId);
 
     if (!state.db[playerId]) {
         state.db[playerId] = {
@@ -35,7 +35,7 @@ export default async function handler(req, res) {
         state.db[playerId].username = username;
     }
 
-    await saveState(state);
+    await saveState(state, playerId);
 
     return res.status(200).json(state.db[playerId]);
 }
