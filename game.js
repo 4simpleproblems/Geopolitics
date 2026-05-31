@@ -293,6 +293,7 @@ function connectWebSocket() {
             : 'wss://api.geopolitics-game.org';
     }
 
+    console.log("Connecting to command grid at:", wsUrl);
     socket = new WebSocket(wsUrl);
 
     socket.onopen = () => {
