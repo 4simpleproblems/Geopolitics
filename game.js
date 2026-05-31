@@ -393,7 +393,13 @@ function setupWorld() {
             return ownerColor;
         })
         .polygonSideColor(() => 'rgba(255,255,255,0.05)')
-        .polygonStrokeColor(() => 'rgba(0,0,0,0.3)')
+        .polygonStrokeColor(d => {
+            const owner = d.properties.owner || d.properties.ADMIN;
+            if (profile && owner === profile.username) {
+                return 'rgba(0,0,0,0)';
+            }
+            return 'rgba(0,0,0,0.3)';
+        })
         .polygonAltitude(0.01)
         .polygonLabel(d => createTooltip(d))
         .onPolygonHover(d => {
@@ -1313,8 +1319,81 @@ window.togglePauseGame = async () => {
                 pauseBtn.title = isPaused ? 'Resume Game' : 'Pause Game';
             }
             logMsg(isPaused ? 'Game Simulation Paused.' : 'Game Simulation Resumed.');
+            if (isPaused) {
+                window.openPauseMenu();
+            } else {
+                window.closePauseMenuLocal();
+            }
         }
     } catch (e) {}
+};
+
+window.closePauseMenu = async () => {
+    try {
+        const res = await sendAction({ type: 'TOGGLE_PAUSE' });
+        if (res && res.success && !res.isPaused) {
+            const pauseBtn = document.getElementById('btn-pause-game');
+            if (pauseBtn) {
+                pauseBtn.innerHTML = '<i class="fa-solid fa-pause"></i>';
+                pauseBtn.title = 'Pause Game';
+            }
+            logMsg('Game Simulation Resumed.');
+            window.closePauseMenuLocal();
+        }
+    } catch (e) {}
+};
+
+window.closePauseMenuLocal = () => {
+    const modal = document.getElementById('pause-menu-modal');
+    if (modal) modal.style.display = 'none';
+};
+
+window.openPauseMenu = () => {
+    const modal = document.getElementById('pause-menu-modal');
+    if (modal) {
+        modal.style.display = 'flex';
+        const input = document.getElementById('rename-empire-input');
+        if (input && profile) {
+            input.value = profile.username;
+        }
+        window.updatePauseMenuStats();
+    }
+};
+
+window.updatePauseMenuStats = () => {
+    if (!profile) return;
+    const playerLands = mapData.filter(f => f.properties.owner === profile.username);
+    const totalPop = playerLands.reduce((sum, f) => sum + f.properties.gameStats.pop, 0);
+    const totalMil = playerLands.reduce((sum, f) => sum + f.properties.gameStats.mil, 0);
+
+    const terrEl = document.getElementById('pause-stat-territories');
+    const popEl = document.getElementById('pause-stat-population');
+    const milEl = document.getElementById('pause-stat-troops');
+    const peakEl = document.getElementById('pause-stat-peak');
+
+    if (terrEl) terrEl.innerText = playerLands.length;
+    if (popEl) popEl.innerText = formatNum(totalPop);
+    if (milEl) milEl.innerText = formatNum(totalMil);
+    if (peakEl) peakEl.innerText = formatNum(profile.stats.peakMilitary || 0);
+};
+
+window.renameEmpire = async () => {
+    const input = document.getElementById('rename-empire-input');
+    if (!input) return;
+    const newName = input.value.trim();
+    if (!newName) return alert('Enter a valid name.');
+    try {
+        const res = await sendAction({ type: 'RENAME_EMPIRE', newTitle: newName });
+        if (res && res.success) {
+            profile = res.profile;
+            player.empireName = profile.username;
+            alert('Empire renamed successfully.');
+            await pollMapState();
+            window.updatePauseMenuStats();
+        }
+    } catch (e) {
+        alert(e.message);
+    }
 };
 
 let currentSaveLocation = 'local';

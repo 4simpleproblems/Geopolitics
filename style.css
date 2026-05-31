@@ -698,7 +698,7 @@ body {
     border: 1px solid var(--border);
     padding: 16px;
     border-radius: 4px;
-    width: 280px;
+    width: 350px;
     backdrop-filter: blur(12px);
     box-shadow: 0 10px 30px rgba(0,0,0,0.5);
     max-height: 50vh;

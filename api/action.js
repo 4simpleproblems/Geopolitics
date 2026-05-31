@@ -447,6 +447,24 @@ export default async function handler(req, res) {
         return res.status(200).json({ success: true, profile });
     }
 
+    if (type === 'RENAME_EMPIRE') {
+        const cleanedName = newTitle ? newTitle.trim() : '';
+        if (!cleanedName) {
+            return res.status(400).json({ error: 'Name cannot be empty.' });
+        }
+        const oldName = profile.username;
+        profile.username = cleanedName;
+
+        state.mapData.forEach(f => {
+            if (f.properties.owner === oldName) {
+                f.properties.owner = cleanedName;
+            }
+        });
+
+        await saveState(state, playerId);
+        return res.status(200).json({ success: true, profile });
+    }
+
     if (type === 'TOGGLE_PAUSE') {
         state.isPaused = !state.isPaused;
         await saveState(state, playerId);
