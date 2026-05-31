@@ -1008,3 +1008,25 @@ body {
     animation: shake 0.5s;
     animation-iteration-count: infinite;
 }
+
+.toggle-btn.active {
+    background: #ffffff !important;
+    color: #000000 !important;
+}
+
+.settings-trigger-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    padding: 8px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.2s;
+}
+
+.settings-trigger-btn:hover {
+    color: var(--text-primary);
+    border-color: var(--border-hover);
+}
+

@@ -1,7 +1,7 @@
 import { formatNum, getCentroid } from './utils.js';
+import * as THREE from 'three';
+import Globe from 'globe.gl';
 
-const Globe = window.Globe || window.GlobeGl;
-const THREE = window.THREE;
 
 let sunGroup;
 let sunLight;
@@ -40,6 +40,42 @@ window.handleContextAction = handleContextAction;
 window.requestSelfCollapse = requestSelfCollapse;
 window.closeCollapseModal = () => { document.getElementById('collapse-screen').style.display = 'none'; };
 window.closeVictoryModal = () => { document.getElementById('victory-screen').style.display = 'none'; };
+
+window.showSettingsModal = () => {
+    document.getElementById('settings-screen').style.display = 'flex';
+    const currentRes = localStorage.getItem('geo_res') || 'high';
+    document.getElementById('res-high').classList.toggle('active', currentRes === 'high');
+    document.getElementById('res-low').classList.toggle('active', currentRes === 'low');
+    document.getElementById('ws-endpoint-input').value = localStorage.getItem('geo_ws_endpoint') || '';
+};
+
+window.closeSettingsModal = () => {
+    const inputVal = document.getElementById('ws-endpoint-input').value.trim();
+    const oldEndpoint = localStorage.getItem('geo_ws_endpoint') || '';
+    localStorage.setItem('geo_ws_endpoint', inputVal);
+    document.getElementById('settings-screen').style.display = 'none';
+    if (inputVal !== oldEndpoint) {
+        if (socket) {
+            socket.close();
+        }
+    }
+};
+
+window.setResolution = (res) => {
+    resolution = res;
+    localStorage.setItem('geo_res', res);
+    document.getElementById('res-high').classList.toggle('active', res === 'high');
+    document.getElementById('res-low').classList.toggle('active', res === 'low');
+    if (res === 'low') {
+        activeArcs = [];
+        explosionData = [];
+        if (world) {
+            world.arcsData([]);
+            world.customLayerData([]);
+        }
+    }
+};
+
 
 async function init() {
     try {
@@ -250,9 +286,12 @@ function animate() {
 }
 
 function connectWebSocket() {
-    const wsUrl = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-        ? 'ws://localhost:8080'
-        : 'wss://api.geopolitics-game.org';
+    let wsUrl = localStorage.getItem('geo_ws_endpoint');
+    if (!wsUrl) {
+        wsUrl = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+            ? 'ws://localhost:8080'
+            : 'wss://api.geopolitics-game.org';
+    }
 
     socket = new WebSocket(wsUrl);
 

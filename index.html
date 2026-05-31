@@ -8,8 +8,16 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script src="https://unpkg.com/three@0.156.0/build/three.min.js"></script>
-    <script src="https://unpkg.com/globe.gl@2.32.0/dist/globe.gl.min.js"></script>
+    
+    <script type="importmap">
+    {
+      "imports": {
+        "three": "https://esm.sh/three@0.156.0",
+        "globe.gl": "https://esm.sh/globe.gl@2.32.0?external=three"
+      }
+    }
+    </script>
+    
     <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
     <link rel="stylesheet" href="style.css">
 </head>
@@ -37,6 +45,7 @@
                 <span class="token-label">TOKENS:</span>
                 <span id="player-tokens-val" class="token-val">0</span>
             </div>
+            <button class="settings-trigger-btn" onclick="window.showSettingsModal()"><i class="fa-solid fa-gear"></i></button>
         </div>
     </div>
 
@@ -225,6 +234,7 @@
             <div class="status-item">Personnel <span class="status-val" id="hud-pop">0</span></div>
             <div class="status-item">Military <span class="status-val" id="hud-mil">0</span></div>
             <button id="btn-abandon" onclick="window.requestSelfCollapse()"><i class="fa-solid fa-rectangle-xmark"></i> ABANDON</button>
+            <button class="settings-trigger-btn" onclick="window.showSettingsModal()"><i class="fa-solid fa-gear"></i></button>
         </div>
 
         <div id="active-map-control-panel">
@@ -279,6 +289,30 @@
                 <strong id="victory-tokens">+50 TOKENS</strong>
             </div>
             <button class="btn-primary" onclick="window.closeVictoryModal()">RETURN TO COMMAND HUB</button>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-screen" class="modal-overlay">
+        <div class="modal-card">
+            <div class="modal-header">
+                <i class="fa-solid fa-gear"></i>
+                <h1>SYSTEM CONFIGURATION</h1>
+            </div>
+            <div class="setting-group" style="text-align:left; margin-bottom:20px;">
+                <label style="display:block; font-size:0.7rem; font-weight:700; color:var(--text-secondary); text-transform:uppercase; margin-bottom:8px;">Tactical Resolution / Fidelity</label>
+                <div class="toggle-group" style="display:flex; border:1px solid var(--border); border-radius:4px; overflow:hidden;">
+                    <button id="res-high" class="toggle-btn active" onclick="window.setResolution('high')">HIGH</button>
+                    <button id="res-low" class="toggle-btn" onclick="window.setResolution('low')">LOW</button>
+                </div>
+                <p class="setting-desc" style="font-size:0.7rem; color:var(--text-secondary); margin-top:6px; line-height:1.4;">Low resolution disables tactical arcs (planes/nukes) and 3D kinetic impact effects.</p>
+            </div>
+            <div class="setting-group" style="text-align:left; margin-bottom:24px;">
+                <label style="display:block; font-size:0.7rem; font-weight:700; color:var(--text-secondary); text-transform:uppercase; margin-bottom:8px;">Command Grid Endpoint</label>
+                <input type="text" id="ws-endpoint-input" placeholder="wss://api.geopolitics-game.org" style="width:100%; background:#000; border:1px solid var(--border); color:#fff; padding:12px; border-radius:4px; font-family:var(--font-mono); font-size:0.8rem; outline:none;">
+                <p class="setting-desc" style="font-size:0.7rem; color:var(--text-secondary); margin-top:6px; line-height:1.4;">Specify the authoritative simulation backend URL. Leave empty to use system default.</p>
+            </div>
+            <button class="btn-primary" onclick="window.closeSettingsModal()">SAVE & APPLY</button>
         </div>
     </div>
 
