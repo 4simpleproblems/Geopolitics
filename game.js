@@ -18,7 +18,6 @@ let player = { active: false, empireName: '', stats: { pop: 0, mil: 0 } };
 let hoverCountry = null;
 let activeArcs = [];
 let activeRings = [];
-let explosionData = [];
 let invasionProgress = {};
 let resolution = localStorage.getItem('geo_res') || 'high';
 
@@ -68,10 +67,8 @@ window.setResolution = (res) => {
     document.getElementById('res-low').classList.toggle('active', res === 'low');
     if (res === 'low') {
         activeArcs = [];
-        explosionData = [];
         if (world) {
             world.arcsData([]);
-            world.customLayerData([]);
         }
     }
 };
@@ -82,7 +79,13 @@ async function init() {
         const res = await fetch(GEO_URL);
         if (!res.ok) throw new Error('HTTP error');
         const data = await res.json();
-        originalMapData = data.features;
+        originalMapData = data.features.map(f => {
+            const p = f.properties;
+            const pop = p.POP_EST || 1000000;
+            f.properties.owner = p.ADMIN;
+            f.properties.gameStats = { pop: pop, mil: Math.floor(pop * 0.01) };
+            return f;
+        });
         mapData = JSON.parse(JSON.stringify(originalMapData));
 
         setupWorld();
@@ -145,22 +148,7 @@ function setupWorld() {
             if (world) world.polygonCapColor(world.polygonCapColor());
         })
         .onPolygonClick((d, e) => handlePolygonClick(d, e))
-        .onPolygonRightClick((d, e) => showCtxMenu(d, e))
-        .customLayerData(explosionData)
-        .customThreeObject(() => {
-            if (!THREE) return null;
-            const group = new THREE.Group();
-            const mat = new THREE.MeshBasicMaterial({ color: 0xff4d4d, transparent: true, opacity: 0.9 });
-            const sphere = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 16), mat);
-            sphere.position.y = 0.5;
-            group.add(sphere);
-            return group;
-        })
-        .customThreeObjectUpdate((obj, d) => {
-            const scale = d.radius * (1 - d.age);
-            obj.scale.set(scale, scale, scale);
-            if (obj.children[0]) obj.children[0].material.opacity = 1 - d.age;
-        });
+        .onPolygonRightClick((d, e) => showCtxMenu(d, e));
 
     world.controls().autoRotate = true;
     world.controls().autoRotateSpeed = 0.3;
@@ -426,19 +414,7 @@ function handleServerMessage(data) {
                 activeArcs = activeArcs.filter(a => a !== arc);
                 if (world) world.arcsData(activeArcs);
 
-                const boom = { lat: endCoords[1], lng: endCoords[0], radius: 15, age: 0 };
-                explosionData.push(boom);
-                const boomAnim = () => {
-                    boom.age += 0.02;
-                    if (boom.age < 1) {
-                        if (world) world.customLayerData(explosionData);
-                        requestAnimationFrame(boomAnim);
-                    } else {
-                        explosionData = explosionData.filter(b => b !== boom);
-                        if (world) world.customLayerData(explosionData);
-                    }
-                };
-                boomAnim();
+
 
                 document.body.classList.add('shake');
                 activeRings.push({ lat: endCoords[1], lng: endCoords[0], maxR: 25, speed: 6, repeat: 0, color: '#ee0000' });
