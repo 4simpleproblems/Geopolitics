@@ -50,20 +50,20 @@ export default async function handler(req, res) {
                 state.mapData.forEach(f => {
                     const owner = f.properties.owner;
                     const ownerProfile = playersList.find(p => p.username === owner);
-                    let growthRate = 0.003;
+                    let growthRate = 0.015;
 
                     if (f.properties.gameStats.fallout) {
-                        growthRate = 0.0006;
+                        growthRate = 0.003;
                     } else if (ownerProfile) {
                         if (ownerProfile.logisticsBoostUntil && ownerProfile.logisticsBoostUntil > now) {
-                            growthRate += 0.009;
+                            growthRate += 0.035;
                         } else {
                             const logisticsLvl = ownerProfile.skills.logistics ? 2 : 0;
-                            growthRate += logisticsLvl * 0.001;
+                            growthRate += logisticsLvl * 0.005;
                         }
                     }
 
-                    f.properties.gameStats.mil += Math.floor(f.properties.gameStats.pop * growthRate);
+                    f.properties.gameStats.mil += Math.floor(f.properties.gameStats.mil * growthRate) + 100;
 
                     if (ownerProfile) {
                         const totalMil = state.mapData.filter(x => x.properties.owner === owner)

@@ -229,6 +229,44 @@ export default async function handler(req, res) {
             targetFeature.properties.gameStats.pop = Math.floor(targetFeature.properties.gameStats.pop * 0.2);
             targetFeature.properties.gameStats.fallout = true;
 
+            let surrendered = false;
+            if (targetFeature.properties.gameStats.mil < totalMil * 0.15 || targetFeature.properties.gameStats.mil < 50000) {
+                targetFeature.properties.owner = profile.username;
+                targetFeature.properties.gameStats.mil = Math.floor(totalMil * 0.02) + 1000;
+                surrendered = true;
+                profile.stats.territoriesAnnexed++;
+
+                const totalSectors = state.mapData.length;
+                const ownedCount = state.mapData.filter(f => f.properties.owner === profile.username).length;
+                const pct = ownedCount / totalSectors;
+                if (pct >= 0.7) {
+                    profile.activeGame = false;
+                    let multiplier = 1.0;
+                    if (state.difficulty === 'easy') multiplier = 0.5;
+                    if (state.difficulty === 'hard') multiplier = 2.0;
+                    const bonusTokens = Math.floor(50 * multiplier);
+                    profile.tokens += bonusTokens;
+                    profile.stats.wins++;
+
+                    state.activeEvents.push({
+                        id: `victory_${profile.id}_${Date.now()}`,
+                        type: 'VICTORY',
+                        winner: profile.username,
+                        bonusTokens,
+                        timestamp: Date.now(),
+                        duration: 8000
+                    });
+
+                    state.mapData = state.mapData.map(f => {
+                        f.properties.owner = f.properties.ADMIN;
+                        const pop = f.properties.POP_EST || 1000000;
+                        f.properties.gameStats = { pop, mil: Math.floor(pop * 0.01) };
+                        return f;
+                    });
+                    state.pendingActions = [];
+                }
+            }
+
             state.activeEvents.push({
                 id: `nuke_${playerId}_${target}_${Date.now()}`,
                 type: 'NUKE_LAUNCH',
@@ -241,6 +279,9 @@ export default async function handler(req, res) {
             });
 
             await saveState(state, playerId);
+            if (surrendered) {
+                return res.status(200).json({ success: true, message: `Surrender Confirmed: ${target} surrendered to your forces.`, profile });
+            }
             return res.status(200).json({ success: true, message: 'Strategic nuke detonated. Radiation fallout detected.', profile });
         }
 

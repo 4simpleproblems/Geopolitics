@@ -1527,3 +1527,10 @@ setInterval(() => {
         dateEl.innerText = now.toLocaleString();
     }
 }, 1000);
+
+window.addEventListener('resize', () => {
+    if (world) {
+        world.width(window.innerWidth);
+        world.height(window.innerHeight);
+    }
+});
