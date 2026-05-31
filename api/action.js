@@ -17,6 +17,22 @@ function getCentroid(feature) {
     return [0, 0];
 }
 
+function getClosestPlayerLand(playerLands, targetFeature) {
+    if (playerLands.length === 0) return null;
+    let closestLand = playerLands[0];
+    let minDist = Infinity;
+    const tCentroid = getCentroid(targetFeature);
+    for (const land of playerLands) {
+        const sCentroid = getCentroid(land);
+        const dist = Math.pow(sCentroid[0] - tCentroid[0], 2) + Math.pow(sCentroid[1] - tCentroid[1], 2);
+        if (dist < minDist) {
+            minDist = dist;
+            closestLand = land;
+        }
+    }
+    return closestLand;
+}
+
 export default async function handler(req, res) {
     if (req.method !== 'POST') {
         return res.status(405).json({ error: 'Method not allowed' });
@@ -114,6 +130,11 @@ export default async function handler(req, res) {
             return res.status(400).json({ error: 'You do not own any countries.' });
         }
 
+        const sourceLand = getClosestPlayerLand(playerLands, targetFeature);
+        if (!sourceLand) {
+            return res.status(400).json({ error: 'Source territory not found.' });
+        }
+
         const currentLoadout = profile.skills.loadout || ['invasion'];
         if (!currentLoadout.includes(skillId)) {
             return res.status(400).json({ error: 'Skill not equipped in loadout.' });
@@ -173,7 +194,7 @@ export default async function handler(req, res) {
                 target,
                 invadeType,
                 duration,
-                startCoords: getCentroid(playerLands[0]),
+                startCoords: getCentroid(sourceLand),
                 endCoords: getCentroid(targetFeature),
                 color: profile.selectedColor,
                 timestamp: Date.now()
@@ -193,7 +214,7 @@ export default async function handler(req, res) {
                 target,
                 invadeType: 'border',
                 duration: 1000,
-                startCoords: getCentroid(playerLands[0]),
+                startCoords: getCentroid(sourceLand),
                 endCoords: getCentroid(targetFeature),
                 color: '#ffaa00',
                 timestamp: Date.now()
@@ -213,7 +234,7 @@ export default async function handler(req, res) {
                 type: 'NUKE_LAUNCH',
                 attacker: profile.username,
                 target,
-                startCoords: getCentroid(playerLands[0]),
+                startCoords: getCentroid(sourceLand),
                 endCoords: getCentroid(targetFeature),
                 duration: 1000,
                 timestamp: Date.now()
@@ -226,7 +247,7 @@ export default async function handler(req, res) {
         if (skillId === 'propaganda') {
             const convertAmount = Math.floor(targetFeature.properties.gameStats.mil * 0.25);
             targetFeature.properties.gameStats.mil -= convertAmount;
-            playerLands[0].properties.gameStats.mil += convertAmount;
+            sourceLand.properties.gameStats.mil += convertAmount;
 
             state.activeEvents.push({
                 id: `prop_${playerId}_${target}_${Date.now()}`,
@@ -235,7 +256,7 @@ export default async function handler(req, res) {
                 target,
                 invadeType: 'border',
                 duration: 1000,
-                startCoords: getCentroid(playerLands[0]),
+                startCoords: getCentroid(sourceLand),
                 endCoords: getCentroid(targetFeature),
                 color: '#ffffff',
                 timestamp: Date.now()

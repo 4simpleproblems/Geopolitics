@@ -23,7 +23,10 @@ export default async function handler(req, res) {
 
     const now = Date.now();
 
-    if (state.isPaused) {
+    const welcomeProfile = playerId ? state.db[playerId] : null;
+    const isActiveGame = welcomeProfile && welcomeProfile.activeGame;
+
+    if (state.isPaused || !isActiveGame) {
         state.lastTick = now;
         state.activeEvents = state.activeEvents.filter(e => e.timestamp + e.duration > now);
         await saveState(state, playerId);
@@ -150,7 +153,6 @@ export default async function handler(req, res) {
     }
 
     const leaderboard = getLeaderboard(state);
-    const welcomeProfile = playerId ? state.db[playerId] : null;
 
     return res.status(200).json({
         mapState: getMapStateSummary(state),
@@ -166,8 +168,10 @@ function checkPlayerCollapses(state) {
     const playersList = Object.values(state.db);
     playersList.forEach(profile => {
         if (!profile.activeGame) return;
-        const ownedCount = state.mapData.filter(f => f.properties.owner === profile.username).length;
-        if (ownedCount === 0) {
+        const playerLands = state.mapData.filter(f => f.properties.owner === profile.username);
+        const ownedCount = playerLands.length;
+        const totalMil = playerLands.reduce((sum, f) => sum + f.properties.gameStats.mil, 0);
+        if (ownedCount === 0 || totalMil <= 0) {
             handlePlayerCollapse(state, profile);
         }
     });

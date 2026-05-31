@@ -401,10 +401,29 @@ function setupWorld() {
             if (world) world.polygonCapColor(world.polygonCapColor());
         })
         .onPolygonClick((d, e) => handlePolygonClick(d, e))
-        .onPolygonRightClick((d, e) => showCtxMenu(d, e));
+        .onPolygonRightClick((d, e) => showCtxMenu(d, e))
+        .arcStartLat(d => d.startLat)
+        .arcStartLng(d => d.startLng)
+        .arcEndLat(d => d.endLat)
+        .arcEndLng(d => d.endLng)
+        .arcColor(d => d.color)
+        .arcAltitude(0.25)
+        .arcStroke(1.5)
+        .arcDashLength(0.4)
+        .arcDashGap(0.2)
+        .arcDashAnimateTime(1500)
+        .ringLat(d => d.lat)
+        .ringLng(d => d.lng)
+        .ringColor(d => d.color)
+        .ringMaxRadius(d => d.maxR)
+        .ringPropagationSpeed(d => d.speed)
+        .ringRepeat(d => d.repeat);
 
-    world.controls().autoRotate = true;
-    world.controls().autoRotateSpeed = 0.3;
+    const controls = world.controls();
+    controls.maxDistance = 350;
+    controls.minDistance = 120;
+    controls.autoRotate = true;
+    controls.autoRotateSpeed = 0.3;
     world.pointOfView({ lat: 20, lng: 0, altitude: 2.5 });
 
     sunLight = new THREE.DirectionalLight(0xfff5ea, 1.2);
@@ -753,9 +772,17 @@ async function requestSpawn() {
             document.getElementById('saas-header').style.display = 'none';
             document.getElementById('active-hud').style.display = 'block';
 
-            if (world) world.controls().autoRotate = false;
-
+            mapData = JSON.parse(JSON.stringify(originalMapData));
             const targetNode = mapData.find(f => f.properties.ADMIN === result.country);
+            if (targetNode) {
+                targetNode.properties.owner = profile.username;
+                targetNode.properties.gameStats.mil = Math.floor(targetNode.properties.gameStats.pop * 0.01);
+            }
+            if (world) {
+                world.polygonsData(mapData);
+                world.controls().autoRotate = false;
+            }
+
             if (targetNode) {
                 const centroid = getCentroid(targetNode);
                 if (world) world.pointOfView({ lat: centroid[1], lng: centroid[0], altitude: 1.2 }, 2000);

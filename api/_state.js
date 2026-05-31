@@ -125,14 +125,15 @@ async function upsertProfile(profile) {
 }
 
 export async function getState(playerId) {
+    const id = playerId || 'global';
     const useKV = process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN;
 
     let state;
     if (useKV) {
         try {
-            const mapRes = await kvRequest('get', ['geo:map_data']);
-            const tickRes = await kvRequest('get', ['geo:last_tick']);
-            const eventsRes = await kvRequest('get', ['geo:active_events']);
+            const mapRes = await kvRequest('get', [`geo:map_data:${id}`]);
+            const tickRes = await kvRequest('get', [`geo:last_tick:${id}`]);
+            const eventsRes = await kvRequest('get', [`geo:active_events:${id}`]);
             const dbRes = await kvRequest('get', ['geo:db']);
 
             let mapData = mapRes.result ? JSON.parse(mapRes.result) : null;
@@ -143,9 +144,9 @@ export async function getState(playerId) {
             if (!mapData) {
                 mapData = await loadOriginalMap();
                 lastTick = Date.now();
-                await kvSet('geo:map_data', JSON.stringify(mapData));
-                await kvSet('geo:last_tick', lastTick.toString());
-                await kvSet('geo:active_events', JSON.stringify(activeEvents));
+                await kvSet(`geo:map_data:${id}`, JSON.stringify(mapData));
+                await kvSet(`geo:last_tick:${id}`, lastTick.toString());
+                await kvSet(`geo:active_events:${id}`, JSON.stringify(activeEvents));
                 await kvSet('geo:db', JSON.stringify(db));
             }
 
@@ -157,15 +158,30 @@ export async function getState(playerId) {
 
     if (!state) {
         if (!inMemoryState) {
-            const mapData = await loadOriginalMap();
             inMemoryState = {
-                mapData,
-                lastTick: Date.now(),
-                activeEvents: [],
+                states: {},
                 db: {}
             };
         }
-        state = inMemoryState;
+        if (!inMemoryState.states[id]) {
+            const mapData = await loadOriginalMap();
+            inMemoryState.states[id] = {
+                mapData,
+                lastTick: Date.now(),
+                activeEvents: [],
+                pendingActions: [],
+                isPaused: false
+            };
+        }
+        state = {
+            mapData: inMemoryState.states[id].mapData,
+            lastTick: inMemoryState.states[id].lastTick,
+            activeEvents: inMemoryState.states[id].activeEvents,
+            pendingActions: inMemoryState.states[id].pendingActions,
+            isPaused: inMemoryState.states[id].isPaused,
+            difficulty: inMemoryState.states[id].difficulty,
+            db: inMemoryState.db
+        };
     }
 
     if (playerId) {
@@ -190,6 +206,7 @@ export async function getState(playerId) {
 }
 
 export async function saveState(state, playerId) {
+    const id = playerId || 'global';
     if (playerId && state.db[playerId]) {
         await upsertProfile(state.db[playerId]);
     }
@@ -198,9 +215,9 @@ export async function saveState(state, playerId) {
 
     if (useKV) {
         try {
-            await kvSet('geo:map_data', JSON.stringify(state.mapData));
-            await kvSet('geo:last_tick', state.lastTick.toString());
-            await kvSet('geo:active_events', JSON.stringify(state.activeEvents));
+            await kvSet(`geo:map_data:${id}`, JSON.stringify(state.mapData));
+            await kvSet(`geo:last_tick:${id}`, state.lastTick.toString());
+            await kvSet(`geo:active_events:${id}`, JSON.stringify(state.activeEvents));
             await kvSet('geo:db', JSON.stringify(state.db));
             return;
         } catch (e) {
@@ -208,5 +225,15 @@ export async function saveState(state, playerId) {
         }
     }
 
-    inMemoryState = state;
+    if (inMemoryState) {
+        inMemoryState.states[id] = {
+            mapData: state.mapData,
+            lastTick: state.lastTick,
+            activeEvents: state.activeEvents,
+            pendingActions: state.pendingActions,
+            isPaused: state.isPaused,
+            difficulty: state.difficulty
+        };
+        inMemoryState.db = state.db;
+    }
 }
