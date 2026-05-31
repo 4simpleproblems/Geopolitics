@@ -65,117 +65,201 @@ export default async function handler(req, res) {
         return res.status(200).json({ success: true, country: targetFeature.properties.ADMIN, profile });
     }
 
-    if (type === 'INVADE') {
-        const targetFeature = state.mapData.find(f => f.properties.ADMIN === target);
-        if (!targetFeature) {
-            return res.status(400).json({ error: 'Target country not found.' });
-        }
-
-        if (targetFeature.properties.owner === profile.username) {
-            return res.status(200).json({ success: true });
-        }
-
-        const playerLands = state.mapData.filter(f => f.properties.owner === profile.username);
-        if (playerLands.length === 0) {
-            return res.status(400).json({ error: 'You do not own any countries.' });
-        }
-
-        const isBordering = playerLands.some(land => land.properties.neighbors.includes(target));
-        const invadeType = isBordering ? 'border' : 'air';
-
-        let attMil = playerLands.reduce((sum, f) => sum + f.properties.gameStats.mil, 0);
-        let defMil = targetFeature.properties.gameStats.mil;
-
-        const baseThreshold = invadeType === 'air' ? 4.0 : 2.5;
-        const parityLvl = profile.skills.tacticalParity || 0;
-        const thresholdModifier = parityLvl * 0.2;
-        const threshold = Math.max(1.2, baseThreshold - thresholdModifier);
-
-        if (defMil > attMil * threshold) {
-            return res.status(400).json({ error: 'Assault impossible. Defense strength too high.' });
-        }
-
-        const duration = (invadeType === 'air' ? 4000 : 2000) + (defMil / 50000) * 1000;
-        const resolveTime = Date.now() + duration;
-
-        state.pendingActions.push({
-            type: 'INVADE_RESOLVE',
-            playerId,
-            target,
-            invadeType,
-            resolveTime
-        });
-
-        state.activeEvents.push({
-            id: `inv_${playerId}_${target}_${Date.now()}`,
-            type: 'INVASION_START',
-            attacker: profile.username,
-            target,
-            invadeType,
-            duration,
-            startCoords: getCentroid(playerLands[0]),
-            endCoords: getCentroid(targetFeature),
-            color: profile.selectedColor,
-            timestamp: Date.now()
-        });
-
-        await saveState(state, playerId);
-        return res.status(200).json({ success: true, message: 'Assault initiated.' });
-    }
-
-    if (type === 'NUKE') {
-        const targetFeature = state.mapData.find(f => f.properties.ADMIN === target);
-        if (!targetFeature) {
-            return res.status(400).json({ error: 'Target country not found.' });
-        }
-
-        const playerLands = state.mapData.filter(f => f.properties.owner === profile.username);
-        if (playerLands.length === 0) {
-            return res.status(400).json({ error: 'You do not own any countries.' });
-        }
-
-        state.pendingActions.push({
-            type: 'NUKE_RESOLVE',
-            playerId,
-            target,
-            resolveTime: Date.now() + 1000
-        });
-
-        state.activeEvents.push({
-            id: `nuke_${playerId}_${target}_${Date.now()}`,
-            type: 'NUKE_LAUNCH',
-            attacker: profile.username,
-            target,
-            startCoords: getCentroid(playerLands[0]),
-            endCoords: getCentroid(targetFeature),
-            duration: 1000,
-            timestamp: Date.now()
-        });
-
-        await saveState(state, playerId);
-        return res.status(200).json({ success: true, message: 'Strategic strike launched.' });
-    }
-
-    if (type === 'UPGRADE_SKILL') {
-        const currentLvl = profile.skills[skill] || 0;
-        if (currentLvl >= 3) {
-            return res.status(400).json({ error: 'Skill already maxed.' });
-        }
-
-        let cost = 10;
-        if (skill === 'logistics') cost = currentLvl === 0 ? 10 : (currentLvl === 1 ? 25 : 50);
-        else if (skill === 'tacticalParity') cost = currentLvl === 0 ? 15 : (currentLvl === 1 ? 30 : 60);
-        else if (skill === 'economicHeadstart') cost = currentLvl === 0 ? 12 : (currentLvl === 1 ? 25 : 50);
-
+    if (type === 'UNLOCK_SKILL') {
+        const { skillId } = req.body;
+        const costs = {
+            invasion: 0,
+            airstrike: 10,
+            nuke: 25,
+            propaganda: 15,
+            intelHack: 8,
+            logistics: 12
+        };
+        const cost = costs[skillId] || 0;
         if (profile.tokens < cost) {
             return res.status(400).json({ error: 'Insufficient Legacy Tokens.' });
         }
-
+        if (profile.skills[skillId]) {
+            return res.status(400).json({ error: 'Skill already unlocked.' });
+        }
         profile.tokens -= cost;
-        profile.skills[skill] = currentLvl + 1;
-
+        profile.skills[skillId] = true;
         await saveState(state, playerId);
         return res.status(200).json({ success: true, profile });
+    }
+
+    if (type === 'SET_LOADOUT') {
+        const { loadout } = req.body;
+        if (!Array.isArray(loadout) || loadout.length > 4) {
+            return res.status(400).json({ error: 'Invalid loadout.' });
+        }
+        const allUnlocked = loadout.every(skillId => profile.skills[skillId]);
+        if (!allUnlocked) {
+            return res.status(400).json({ error: 'Cannot equip locked skills.' });
+        }
+        profile.skills.loadout = loadout;
+        await saveState(state, playerId);
+        return res.status(200).json({ success: true, profile });
+    }
+
+    if (type === 'USE_SKILL') {
+        const { skillId } = req.body;
+        const targetFeature = state.mapData.find(f => f.properties.ADMIN === target);
+        if (!targetFeature) {
+            return res.status(400).json({ error: 'Target country not found.' });
+        }
+
+        const playerLands = state.mapData.filter(f => f.properties.owner === profile.username);
+        if (playerLands.length === 0) {
+            return res.status(400).json({ error: 'You do not own any countries.' });
+        }
+
+        const currentLoadout = profile.skills.loadout || ['invasion'];
+        if (!currentLoadout.includes(skillId)) {
+            return res.status(400).json({ error: 'Skill not equipped in loadout.' });
+        }
+
+        const totalMil = playerLands.reduce((sum, f) => sum + f.properties.gameStats.mil, 0);
+        
+        const costs = {
+            invasion: 0,
+            airstrike: 150000,
+            nuke: 600000,
+            propaganda: 100000,
+            intelHack: 50000,
+            logistics: 80000
+        };
+
+        const cost = costs[skillId] || 0;
+        if (totalMil < cost) {
+            return res.status(400).json({ error: `Insufficient military force. Need ${cost.toLocaleString()} troops.` });
+        }
+
+        if (cost > 0) {
+            playerLands.forEach(f => {
+                f.properties.gameStats.mil = Math.floor(f.properties.gameStats.mil * (1 - cost / totalMil));
+            });
+        }
+
+        if (skillId === 'invasion') {
+            const isBordering = playerLands.some(land => land.properties.neighbors.includes(target));
+            const invadeType = isBordering ? 'border' : 'air';
+
+            let attMil = playerLands.reduce((sum, f) => sum + f.properties.gameStats.mil, 0);
+            let defMil = targetFeature.properties.gameStats.mil;
+
+            const hacked = targetFeature.properties.gameStats.intelHackedUntil && targetFeature.properties.gameStats.intelHackedUntil > Date.now();
+            const requiredRatio = hacked ? 0.8 : 1.1;
+
+            if (attMil < defMil * requiredRatio) {
+                return res.status(400).json({ error: 'Assault impossible. Defense strength too high.' });
+            }
+
+            const duration = (invadeType === 'air' ? 4000 : 2000) + (defMil / 50000) * 1000;
+            const resolveTime = Date.now() + duration;
+
+            state.pendingActions.push({
+                type: 'INVADE_RESOLVE',
+                playerId,
+                target,
+                invadeType,
+                resolveTime
+            });
+
+            state.activeEvents.push({
+                id: `inv_${playerId}_${target}_${Date.now()}`,
+                type: 'INVASION_START',
+                attacker: profile.username,
+                target,
+                invadeType,
+                duration,
+                startCoords: getCentroid(playerLands[0]),
+                endCoords: getCentroid(targetFeature),
+                color: profile.selectedColor,
+                timestamp: Date.now()
+            });
+
+            await saveState(state, playerId);
+            return res.status(200).json({ success: true, message: 'Assault initiated.', profile });
+        }
+
+        if (skillId === 'airstrike') {
+            targetFeature.properties.gameStats.mil = Math.floor(targetFeature.properties.gameStats.mil * 0.65);
+            
+            state.activeEvents.push({
+                id: `air_${playerId}_${target}_${Date.now()}`,
+                type: 'INVASION_START',
+                attacker: profile.username,
+                target,
+                invadeType: 'border',
+                duration: 1000,
+                startCoords: getCentroid(playerLands[0]),
+                endCoords: getCentroid(targetFeature),
+                color: '#ffaa00',
+                timestamp: Date.now()
+            });
+
+            await saveState(state, playerId);
+            return res.status(200).json({ success: true, message: 'Airstrike successful. Enemy forces weakened.', profile });
+        }
+
+        if (skillId === 'nuke') {
+            targetFeature.properties.gameStats.mil = Math.floor(targetFeature.properties.gameStats.mil * 0.1);
+            targetFeature.properties.gameStats.pop = Math.floor(targetFeature.properties.gameStats.pop * 0.2);
+            targetFeature.properties.gameStats.fallout = true;
+
+            state.activeEvents.push({
+                id: `nuke_${playerId}_${target}_${Date.now()}`,
+                type: 'NUKE_LAUNCH',
+                attacker: profile.username,
+                target,
+                startCoords: getCentroid(playerLands[0]),
+                endCoords: getCentroid(targetFeature),
+                duration: 1000,
+                timestamp: Date.now()
+            });
+
+            await saveState(state, playerId);
+            return res.status(200).json({ success: true, message: 'Strategic nuke detonated. Radiation fallout detected.', profile });
+        }
+
+        if (skillId === 'propaganda') {
+            const convertAmount = Math.floor(targetFeature.properties.gameStats.mil * 0.25);
+            targetFeature.properties.gameStats.mil -= convertAmount;
+            playerLands[0].properties.gameStats.mil += convertAmount;
+
+            state.activeEvents.push({
+                id: `prop_${playerId}_${target}_${Date.now()}`,
+                type: 'INVASION_START',
+                attacker: profile.username,
+                target,
+                invadeType: 'border',
+                duration: 1000,
+                startCoords: getCentroid(playerLands[0]),
+                endCoords: getCentroid(targetFeature),
+                color: '#ffffff',
+                timestamp: Date.now()
+            });
+
+            await saveState(state, playerId);
+            return res.status(200).json({ success: true, message: 'Propaganda successful. Converted enemy forces.', profile });
+        }
+
+        if (skillId === 'intelHack') {
+            targetFeature.properties.gameStats.intelHackedUntil = Date.now() + 45000;
+
+            await saveState(state, playerId);
+            return res.status(200).json({ success: true, message: 'Systems hacked. Defense threshold temporarily reduced.', profile });
+        }
+
+        if (skillId === 'logistics') {
+            profile.logisticsBoostUntil = Date.now() + 30000;
+
+            await saveState(state, playerId);
+            return res.status(200).json({ success: true, message: 'Logistics boost activated. Production tripled.', profile });
+        }
+
+        return res.status(400).json({ error: 'Invalid skill action' });
     }
 
     if (type === 'SELECT_COLOR') {
@@ -197,7 +281,10 @@ export default async function handler(req, res) {
         if (state.difficulty === 'easy') multiplier = 0.5;
         if (state.difficulty === 'hard') multiplier = 2.0;
 
-        const tokensAwarded = Math.floor((finalTerritories * 4 + finalPeakMil / 15000) * multiplier);
+        const falloutCount = playerLands.filter(f => f.properties.gameStats.fallout).length;
+        const effectiveTerritories = (finalTerritories - falloutCount) + (falloutCount * 0.2);
+
+        const tokensAwarded = Math.floor((effectiveTerritories * 4 + finalPeakMil / 15000) * multiplier);
         profile.tokens += tokensAwarded;
         profile.stats.survived++;
         profile.activeGame = false;

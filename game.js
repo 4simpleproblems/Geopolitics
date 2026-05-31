@@ -35,9 +35,16 @@ if (!playerId) {
 const GEO_URL = './map.geojson';
 
 window.requestSpawn = requestSpawn;
-window.upgradeSkill = upgradeSkill;
 window.handleContextAction = handleContextAction;
 window.requestSelfCollapse = requestSelfCollapse;
+window.unlockSkill = unlockSkill;
+window.equipSkill = equipSkill;
+window.unequipSkill = unequipSkill;
+window.setSaveLocation = setSaveLocation;
+window.executeSaveGame = executeSaveGame;
+window.closeSaveGameModal = closeSaveGameModal;
+window.executeExitGame = executeExitGame;
+window.closeExitGameModal = closeExitGameModal;
 window.closeCollapseModal = () => { document.getElementById('collapse-screen').style.display = 'none'; };
 window.closeVictoryModal = () => { document.getElementById('victory-screen').style.display = 'none'; };
 
@@ -766,8 +773,16 @@ async function requestSpawn() {
     }
 }
 
-async function requestSelfCollapse() {
-    if (!confirm('Abandon current game?')) return;
+function requestSelfCollapse() {
+    document.getElementById('exit-game-modal').style.display = 'flex';
+}
+
+function closeExitGameModal() {
+    document.getElementById('exit-game-modal').style.display = 'none';
+}
+
+async function executeExitGame() {
+    closeExitGameModal();
     try {
         const res = await sendAction({ type: 'ABANDON' });
         if (res && res.success) {
@@ -822,15 +837,25 @@ async function handlePolygonClick(d) {
 
     if (d.properties.owner === profile.username) return;
 
-    try {
-        await sendAction({ type: 'INVADE', target: d.properties.ADMIN });
-        logMsg(`Assault launched on ${d.properties.ADMIN}`);
-    } catch (e) {}
+    const currentLoadout = (profile && profile.skills && profile.skills.loadout) || ['invasion'];
+    if (currentLoadout.includes('invasion')) {
+        try {
+            const result = await sendAction({ type: 'USE_SKILL', skillId: 'invasion', target: d.properties.ADMIN });
+            if (result.success) {
+                logMsg(result.message);
+                profile = result.profile;
+                await pollMapState();
+            }
+        } catch (e) {
+            alert(e.message);
+        }
+    } else {
+        alert('Equip Invasion in your loadout to launch land assaults.');
+    }
 }
 
 function showCtxMenu(d, e) {
-    if (!player.active) return;
-    if (d.properties.owner === profile.username) return;
+    if (!player.active || !profile) return;
     if (e && e.preventDefault) e.preventDefault();
 
     const menu = document.getElementById('ctx-menu');
@@ -839,6 +864,35 @@ function showCtxMenu(d, e) {
         menu.style.left = `${e.clientX}px`;
         menu.style.top = `${e.clientY}px`;
         lastCtxTarget = d;
+
+        const isOwn = d.properties.owner === profile.username;
+        const currentLoadout = profile.skills.loadout || ['invasion'];
+        let html = '';
+        
+        currentLoadout.forEach(skillId => {
+            if (isOwn) {
+                if (skillId === 'logistics') {
+                    html += `<div class="ctx-item" onclick="window.handleContextAction('logistics')"><i class="fa-solid fa-truck-fast"></i> Logistics Boost</div>`;
+                }
+            } else {
+                if (skillId === 'invasion') {
+                    html += `<div class="ctx-item" onclick="window.handleContextAction('invasion')"><i class="fa-solid fa-crosshairs"></i> Invade Country</div>`;
+                } else if (skillId === 'airstrike') {
+                    html += `<div class="ctx-item" onclick="window.handleContextAction('airstrike')"><i class="fa-solid fa-jet-fighter"></i> Launch Airstrike</div>`;
+                } else if (skillId === 'nuke') {
+                    html += `<div class="ctx-item" onclick="window.handleContextAction('nuke')" style="color:var(--error)"><i class="fa-solid fa-radiation"></i> Drop Nuke</div>`;
+                } else if (skillId === 'propaganda') {
+                    html += `<div class="ctx-item" onclick="window.handleContextAction('propaganda')"><i class="fa-solid fa-bullhorn"></i> Propaganda Campaign</div>`;
+                } else if (skillId === 'intelHack') {
+                    html += `<div class="ctx-item" onclick="window.handleContextAction('intelHack')"><i class="fa-solid fa-user-secret"></i> Intel Hack</div>`;
+                }
+            }
+        });
+
+        if (!html) {
+            html = `<div style="padding:8px 12px; font-size:0.7rem; color:var(--text-secondary);">No action available.</div>`;
+        }
+        menu.innerHTML = html;
     }
 }
 
@@ -851,19 +905,22 @@ function setupContextHandlers() {
     });
 }
 
-function handleContextAction(action) {
+async function handleContextAction(action) {
     const target = lastCtxTarget;
     const menu = document.getElementById('ctx-menu');
     if (menu) menu.style.display = 'none';
 
     if (!target) return;
 
-    if (action === 'invade') {
-        handlePolygonClick(target);
-    } else if (action === 'nuke') {
-        sendAction({ type: 'NUKE', target: target.properties.ADMIN })
-            .then(() => logMsg(`Strategic strike on ${target.properties.ADMIN}`))
-            .catch(() => {});
+    try {
+        const result = await sendAction({ type: 'USE_SKILL', skillId: action, target: target.properties.ADMIN });
+        if (result.success) {
+            logMsg(result.message);
+            profile = result.profile;
+            await pollMapState();
+        }
+    } catch (e) {
+        alert(e.message);
     }
 }
 
@@ -924,49 +981,82 @@ function updateLeaderboardUI(leaderboard) {
 function updateCommandHubUI() {
     if (!profile) return;
 
-    const skills = [
-        { id: 'logistics', base: '0.3%', factor: 0.1, suffix: '% / sec', step: 0.001, costs: [10, 25, 50] },
-        { id: 'tacticalParity', base: '2.5x', factor: -0.2, suffix: 'x threshold', step: -0.2, costs: [15, 30, 60] },
-        { id: 'economicHeadstart', base: 'Base', factor: 5, suffix: '% Capacity', step: 0.05, costs: [12, 25, 50] }
+    const ALL_SKILLS = [
+        { id: 'invasion', name: 'Invasion', desc: 'Standard land assault on neighboring countries. Cost: 0 troops.', cost: 0, icon: 'fa-crosshairs' },
+        { id: 'airstrike', name: 'Airstrike', desc: 'Weakens enemy military forces by 35% instantly. Cost: 150,000 troops.', cost: 10, icon: 'fa-jet-fighter' },
+        { id: 'nuke', name: 'Drop Nuke', desc: 'Destroys 90% of enemy military & 80% of population, but causes long-term fallout. Cost: 600,000 troops.', cost: 25, icon: 'fa-radiation' },
+        { id: 'propaganda', name: 'Propaganda', desc: 'Converts 25% of target military to your side. Cost: 100,000 troops.', cost: 15, icon: 'fa-bullhorn' },
+        { id: 'intelHack', name: 'Intel Hack', desc: 'System hack. Reduces target country defense threshold by 20% for 45s. Cost: 50,000 troops.', cost: 8, icon: 'fa-user-secret' },
+        { id: 'logistics', name: 'Logistics Boost', desc: 'Supplies booster. Triples troop generation in all your territories for 30s. Cost: 80,000 troops.', cost: 12, icon: 'fa-truck-fast' }
     ];
 
-    skills.forEach(s => {
-        const lvl = profile.skills[s.id] || 0;
-        const currentSpan = document.getElementById(s.id === 'logistics' ? 'skill-logistics-current' : (s.id === 'tacticalParity' ? 'skill-parity-current' : 'skill-econ-current'));
-        const nextSpan = document.getElementById(s.id === 'logistics' ? 'skill-logistics-next' : (s.id === 'tacticalParity' ? 'skill-parity-next' : 'skill-econ-next'));
-        const costSpan = document.getElementById(s.id === 'logistics' ? 'cost-logistics' : (s.id === 'tacticalParity' ? 'cost-parity' : 'cost-econ'));
-        const indicators = document.getElementById(s.id === 'logistics' ? 'level-logistics' : (s.id === 'tacticalParity' ? 'level-parity' : 'level-econ')).children;
+    const currentLoadout = (profile.skills && profile.skills.loadout) || ['invasion'];
 
-        for (let i = 0; i < indicators.length; i++) {
-            indicators[i].className = i < lvl ? 'bar active' : 'bar';
+    const loadoutBar = document.getElementById('loadout-bar');
+    const loadoutCount = document.getElementById('loadout-count');
+    if (loadoutBar) {
+        let loadoutHtml = '';
+        for (let i = 0; i < 4; i++) {
+            const skillId = currentLoadout[i];
+            if (skillId) {
+                const skill = ALL_SKILLS.find(s => s.id === skillId);
+                loadoutHtml += `
+                    <div class="loadout-slot filled">
+                        <i class="fa-solid ${skill.icon}"></i>
+                        <span class="slot-name">${skill.name}</span>
+                        <button class="btn-unequip-slot" onclick="window.unequipSkill('${skillId}')">Unequip</button>
+                    </div>
+                `;
+            } else {
+                loadoutHtml += `
+                    <div class="loadout-slot">
+                        <i class="fa-solid fa-plus" style="opacity: 0.3;"></i>
+                        <span style="opacity: 0.5;">Empty Slot</span>
+                    </div>
+                `;
+            }
         }
+        loadoutBar.innerHTML = loadoutHtml;
+    }
+    if (loadoutCount) {
+        loadoutCount.innerText = currentLoadout.length;
+    }
 
-        if (s.id === 'logistics') {
-            const curVal = 0.003 + lvl * 0.001;
-            const nextVal = 0.003 + (lvl + 1) * 0.001;
-            currentSpan.innerText = `${(curVal * 100).toFixed(1)}% / sec`;
-            nextSpan.innerText = lvl < 3 ? `${(nextVal * 100).toFixed(1)}% / sec` : 'MAX';
-        } else if (s.id === 'tacticalParity') {
-            const curVal = 2.5 - lvl * 0.2;
-            const nextVal = 2.5 - (lvl + 1) * 0.2;
-            currentSpan.innerText = `${curVal.toFixed(1)}x threshold`;
-            nextSpan.innerText = lvl < 3 ? `${nextVal.toFixed(1)}x threshold` : 'MAX';
-        } else {
-            currentSpan.innerText = lvl === 0 ? 'Base Capacity' : `+${(lvl * 5)}% Capacity`;
-            nextSpan.innerText = lvl < 3 ? `+${((lvl + 1) * 5)}% Capacity` : 'MAX';
-        }
+    const treeContainer = document.getElementById('skill-tree-container');
+    if (treeContainer) {
+        treeContainer.innerHTML = ALL_SKILLS.map(s => {
+            const isUnlocked = profile.skills && !!profile.skills[s.id];
+            const isEquipped = currentLoadout.includes(s.id);
+            let actionBtn = '';
 
-        const cost = s.costs[lvl];
-        const btn = costSpan.parentElement;
+            if (!isUnlocked) {
+                const canUnlock = profile.tokens >= s.cost;
+                actionBtn = `<button class="btn-primary" onclick="window.unlockSkill('${s.id}')" ${canUnlock ? '' : 'disabled'} style="width: auto; padding: 8px 16px; font-size: 0.75rem;">UNLOCK [${s.cost} TKN]</button>`;
+            } else {
+                if (isEquipped) {
+                    actionBtn = `<button class="btn-primary" onclick="window.unequipSkill('${s.id}')" style="width: auto; padding: 8px 16px; font-size: 0.75rem; background: var(--error); border-color: rgba(255,51,51,0.2); color: #fff;">UNEQUIP</button>`;
+                } else {
+                    const loadoutFull = currentLoadout.length >= 4;
+                    actionBtn = `<button class="btn-primary" onclick="window.equipSkill('${s.id}')" ${loadoutFull ? 'disabled' : ''} style="width: auto; padding: 8px 16px; font-size: 0.75rem;">EQUIP</button>`;
+                }
+            }
 
-        if (lvl >= 3) {
-            costSpan.innerText = 'MAX';
-            btn.disabled = true;
-        } else {
-            costSpan.innerText = `${cost} TKN`;
-            btn.disabled = profile.tokens < cost;
-        }
-    });
+            return `
+                <div class="skill-card">
+                    <div class="skill-info">
+                        <h3 style="display:flex; align-items:center; gap:8px;">
+                            <i class="fa-solid ${s.icon}" style="color:${isEquipped ? 'var(--accent)' : 'var(--text-secondary)'}"></i>
+                            ${s.name}
+                        </h3>
+                        <p style="margin-bottom: 0; margin-top: 8px;">${s.desc}</p>
+                    </div>
+                    <div class="skill-upgrade-action">
+                        ${actionBtn}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
 
     const achievements = [
         { id: 'ach-clean', color: '#ffd700', completed: profile.unlockedColors.includes('#ffd700') },
@@ -1009,8 +1099,56 @@ function updateCommandHubUI() {
             });
         });
     }
+
     if (window.renderSavesUI) {
         window.renderSavesUI();
+    }
+}
+
+async function unlockSkill(skillId) {
+    try {
+        const res = await sendAction({ type: 'UNLOCK_SKILL', skillId });
+        if (res.success) {
+            profile = res.profile;
+            document.getElementById('player-tokens-val').innerText = profile.tokens;
+            updateCommandHubUI();
+        }
+    } catch (e) {
+        alert(e.message);
+    }
+}
+
+async function equipSkill(skillId) {
+    const currentLoadout = (profile && profile.skills && profile.skills.loadout) || ['invasion'];
+    if (currentLoadout.length >= 4) {
+        alert('Loadout full. Unequip a skill first.');
+        return;
+    }
+    if (!currentLoadout.includes(skillId)) {
+        const newLoadout = [...currentLoadout, skillId];
+        try {
+            const res = await sendAction({ type: 'SET_LOADOUT', loadout: newLoadout });
+            if (res.success) {
+                profile = res.profile;
+                updateCommandHubUI();
+            }
+        } catch (e) {
+            alert(e.message);
+        }
+    }
+}
+
+async function unequipSkill(skillId) {
+    const currentLoadout = (profile && profile.skills && profile.skills.loadout) || ['invasion'];
+    const newLoadout = currentLoadout.filter(id => id !== skillId);
+    try {
+        const res = await sendAction({ type: 'SET_LOADOUT', loadout: newLoadout });
+        if (res.success) {
+            profile = res.profile;
+            updateCommandHubUI();
+        }
+    } catch (e) {
+        alert(e.message);
     }
 }
 
@@ -1155,11 +1293,35 @@ window.togglePauseGame = async () => {
     } catch (e) {}
 };
 
-window.promptSaveGame = async () => {
-    const title = prompt('Enter Save Game Title:');
-    if (!title) return;
-    const isCloud = confirm('Save to Cloud Database?\n(Cancel for Local Browser Storage)');
-    
+let currentSaveLocation = 'local';
+
+window.promptSaveGame = () => {
+    const input = document.getElementById('save-game-title-input');
+    if (input && profile) {
+        const dateStr = new Date().toLocaleDateString();
+        input.value = `Game as ${profile.username} (${dateStr})`;
+    }
+    window.setSaveLocation('local');
+    document.getElementById('save-game-modal').style.display = 'flex';
+};
+
+window.closeSaveGameModal = () => {
+    document.getElementById('save-game-modal').style.display = 'none';
+};
+
+window.setSaveLocation = (loc) => {
+    currentSaveLocation = loc;
+    document.getElementById('save-loc-local').classList.toggle('active', loc === 'local');
+    document.getElementById('save-loc-cloud').classList.toggle('active', loc === 'cloud');
+};
+
+window.executeSaveGame = async () => {
+    const title = document.getElementById('save-game-title-input').value.trim();
+    if (!title) return alert('Enter Save Title');
+
+    window.closeSaveGameModal();
+    const isCloud = (currentSaveLocation === 'cloud');
+
     try {
         if (isCloud) {
             if (profile.saves && profile.saves.length >= 5) {

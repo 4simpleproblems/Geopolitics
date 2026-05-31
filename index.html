@@ -109,68 +109,14 @@
             <div id="tab-hub" class="tab-content">
                 <div class="hub-grid">
                     <div class="hub-main">
-                        <h1 class="panel-title">Permanent Upgrades</h1>
-                        <p class="panel-desc">Upgrade your faction parameters. Upgrades are permanently retained across all games.</p>
+                        <h1 class="panel-title">Skill Tree & Loadout</h1>
+                        <p class="panel-desc">Unlock tactical actions using tokens and equip up to 4 of them in your active loadout.</p>
 
-                        <h2 class="section-title">Faction Upgrades</h2>
-                        <div class="skill-tree">
-                            <div class="skill-card">
-                                <div class="skill-info">
-                                    <h3>Logistics Protocol</h3>
-                                    <p>Increases passive troop generation across all controlled territories.</p>
-                                    <div class="skill-stats">
-                                        <span>Current: <strong id="skill-logistics-current">0.3% / sec</strong></span>
-                                        <span>Next: <strong id="skill-logistics-next">0.4% / sec</strong></span>
-                                    </div>
-                                </div>
-                                <div class="skill-upgrade-action">
-                                    <div class="level-indicator" id="level-logistics">
-                                        <span class="bar"></span>
-                                        <span class="bar"></span>
-                                        <span class="bar"></span>
-                                    </div>
-                                    <button class="btn-sec" onclick="window.upgradeSkill('logistics')">UPGRADE <span id="cost-logistics">10 TKN</span></button>
-                                </div>
-                            </div>
+                        <h2 class="section-title">Active Loadout (<span id="loadout-count">0</span> / 4)</h2>
+                        <div class="loadout-bar" id="loadout-bar"></div>
 
-                            <div class="skill-card">
-                                <div class="skill-info">
-                                    <h3>Tactical Parity</h3>
-                                    <p>Reduces the troop threshold multiplier required for neighboring border invasions.</p>
-                                    <div class="skill-stats">
-                                        <span>Current: <strong id="skill-parity-current">2.5x threshold</strong></span>
-                                        <span>Next: <strong id="skill-parity-next">2.3x threshold</strong></span>
-                                    </div>
-                                </div>
-                                <div class="skill-upgrade-action">
-                                    <div class="level-indicator" id="level-parity">
-                                        <span class="bar"></span>
-                                        <span class="bar"></span>
-                                        <span class="bar"></span>
-                                    </div>
-                                    <button class="btn-sec" onclick="window.upgradeSkill('tacticalParity')">UPGRADE <span id="cost-parity">15 TKN</span></button>
-                                </div>
-                            </div>
-
-                            <div class="skill-card">
-                                <div class="skill-info">
-                                    <h3>Economic Head Start</h3>
-                                    <p>Augments starting country population capacity upon starting a new game.</p>
-                                    <div class="skill-stats">
-                                        <span>Current: <strong id="skill-econ-current">Base Capacity</strong></span>
-                                        <span>Next: <strong id="skill-econ-next">+5% Capacity</strong></span>
-                                    </div>
-                                </div>
-                                <div class="skill-upgrade-action">
-                                    <div class="level-indicator" id="level-econ">
-                                        <span class="bar"></span>
-                                        <span class="bar"></span>
-                                        <span class="bar"></span>
-                                    </div>
-                                    <button class="btn-sec" onclick="window.upgradeSkill('economicHeadstart')">UPGRADE <span id="cost-econ">12 TKN</span></button>
-                                </div>
-                            </div>
-                        </div>
+                        <h2 class="section-title">Available Tactics</h2>
+                        <div class="skill-tree" id="skill-tree-container"></div>
                     </div>
 
                     <div class="hub-sidebar">
@@ -404,6 +350,45 @@
             <button class="btn-primary" onclick="window.closeSettingsModal()">SAVE & APPLY</button>
         </div>
     </div>
+
+    <div id="save-game-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-card">
+            <div class="modal-header">
+                <i class="fa-solid fa-floppy-disk"></i>
+                <h1>SAVE GAME</h1>
+            </div>
+            <div class="setting-group" style="text-align:left; margin-bottom:20px;">
+                <label style="display:block; font-size:0.7rem; font-weight:700; color:var(--text-secondary); text-transform:uppercase; margin-bottom:8px;">Save Title</label>
+                <input type="text" id="save-game-title-input" placeholder="Enter save title..." style="width:100%; background:#000; border:1px solid var(--border); color:#fff; padding:12px; border-radius:4px; font-family:var(--font-mono); font-size:0.8rem; outline:none;">
+            </div>
+            <div class="setting-group" style="text-align:left; margin-bottom:24px;">
+                <label style="display:block; font-size:0.7rem; font-weight:700; color:var(--text-secondary); text-transform:uppercase; margin-bottom:8px;">Storage Location</label>
+                <div class="toggle-group" style="display:flex; border:1px solid var(--border); border-radius:4px; overflow:hidden;">
+                    <button id="save-loc-local" class="toggle-btn active" onclick="window.setSaveLocation('local')">LOCAL STORAGE</button>
+                    <button id="save-loc-cloud" class="toggle-btn" onclick="window.setSaveLocation('cloud')">CLOUD DATABASE</button>
+                </div>
+            </div>
+            <div style="display:flex; gap:16px;">
+                <button class="btn-primary" onclick="window.executeSaveGame()" style="flex:1;">SAVE</button>
+                <button class="btn-sec" onclick="window.closeSaveGameModal()" style="flex:1; padding:14px;">CANCEL</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="exit-game-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-card error">
+            <div class="modal-header">
+                <i class="fa-solid fa-right-from-bracket"></i>
+                <h1>ABANDON GAME?</h1>
+            </div>
+            <p style="margin-bottom: 24px; text-align: left; line-height: 1.5; font-size:0.85rem; color:var(--text-secondary);">Are you sure you want to abandon the current game? You will earn tokens based on your conquered territories up to this point, but this game session will end.</p>
+            <div style="display:flex; gap:16px; width:100%;">
+                <button class="btn-primary" onclick="window.executeExitGame()" style="background: var(--error); border-color: rgba(255,51,51,0.2); color:#fff; flex:1;">ABANDON</button>
+                <button class="btn-sec" onclick="window.closeExitGameModal()" style="flex:1; padding:14px;">CANCEL</button>
+            </div>
+        </div>
+    </div>
+
 
     <div id="loading-screen" class="modal-overlay" style="display: none;">
         <div class="modal-card" style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px; text-align: center;">

@@ -171,6 +171,17 @@ export async function getState(playerId) {
     if (playerId) {
         const profile = await fetchProfile(playerId);
         if (profile) {
+            if (!profile.skills || typeof profile.skills.invasion !== 'boolean') {
+                profile.skills = {
+                    invasion: true,
+                    airstrike: false,
+                    nuke: false,
+                    propaganda: false,
+                    intelHack: false,
+                    logistics: false,
+                    loadout: ['invasion']
+                };
+            }
             state.db[playerId] = profile;
         }
     }

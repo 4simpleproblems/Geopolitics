@@ -24,9 +24,13 @@ export default async function handler(req, res) {
             },
             tokens: 0,
             skills: {
-                logistics: 0,
-                tacticalParity: 0,
-                economicHeadstart: 0
+                invasion: true,
+                airstrike: false,
+                nuke: false,
+                propaganda: false,
+                intelHack: false,
+                logistics: false,
+                loadout: ['invasion']
             },
             unlockedColors: ['#0070f3'],
             selectedColor: '#0070f3',

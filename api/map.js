@@ -45,13 +45,19 @@ export default async function handler(req, res) {
 
             for (let t = 0; t < ticks; t++) {
                 state.mapData.forEach(f => {
-                    let growthRate = 0.003;
                     const owner = f.properties.owner;
                     const ownerProfile = playersList.find(p => p.username === owner);
+                    let growthRate = 0.003;
 
-                    if (ownerProfile) {
-                        const logisticsLvl = ownerProfile.skills.logistics || 0;
-                        growthRate += logisticsLvl * 0.001;
+                    if (f.properties.gameStats.fallout) {
+                        growthRate = 0.0006;
+                    } else if (ownerProfile) {
+                        if (ownerProfile.logisticsBoostUntil && ownerProfile.logisticsBoostUntil > now) {
+                            growthRate += 0.009;
+                        } else {
+                            const logisticsLvl = ownerProfile.skills.logistics ? 2 : 0;
+                            growthRate += logisticsLvl * 0.001;
+                        }
                     }
 
                     f.properties.gameStats.mil += Math.floor(f.properties.gameStats.pop * growthRate);

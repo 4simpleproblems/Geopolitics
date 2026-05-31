@@ -1250,3 +1250,61 @@ body {
     border-color: var(--error);
 }
 
+.loadout-bar {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 32px;
+}
+
+.loadout-slot {
+    flex: 1;
+    height: 90px;
+    background: rgba(255, 255, 255, 0.01);
+    border: 1px dashed var(--border);
+    border-radius: 4px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    transition: all 0.2s;
+}
+
+.loadout-slot.filled {
+    background: rgba(0, 112, 243, 0.05);
+    border: 1px solid var(--accent);
+    color: var(--text-primary);
+}
+
+.loadout-slot i {
+    font-size: 1.2rem;
+}
+
+.loadout-slot.filled i {
+    color: var(--accent);
+}
+
+.loadout-slot .slot-name {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.loadout-slot .btn-unequip-slot {
+    background: transparent;
+    border: none;
+    color: var(--error);
+    font-size: 0.65rem;
+    cursor: pointer;
+    text-transform: uppercase;
+    font-weight: 700;
+    margin-top: 4px;
+}
+
+.loadout-slot .btn-unequip-slot:hover {
+    text-decoration: underline;
+}
+
+
